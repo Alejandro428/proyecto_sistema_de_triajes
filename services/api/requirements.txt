@@ -8,3 +8,4 @@ mlflow
 joblib
 httpx
 imbalanced-learn
+psycopg2-binary

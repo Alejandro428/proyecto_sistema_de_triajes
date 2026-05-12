@@ -11,6 +11,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-triageia}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres:/docker-entrypoint-initdb.d
     networks:
       - triageia_net
     restart: unless-stopped
