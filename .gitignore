@@ -18,8 +18,8 @@ data/audio/
 # Jupyter checkpoints
 .ipynb_checkpoints/
 
-# MLflow run artifacts
-mlflow/
+# MLflow run artifacts (solo la carpeta raíz, no services/mlflow/)
+/mlflow/
 
 # IDE
 .vscode/
