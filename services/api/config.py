@@ -10,8 +10,8 @@ def _require(name: str) -> str:
     return val
 
 
-# Anthropic
-ANTHROPIC_API_KEY = _require("ANTHROPIC_API_KEY")
+# Mistral
+MISTRAL_API_KEY = _require("MISTRAL_API_KEY")
 
 # PostgreSQL
 DATABASE_URL = _require("DATABASE_URL")

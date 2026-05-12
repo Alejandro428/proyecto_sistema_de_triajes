@@ -3,7 +3,7 @@ uvicorn[standard]
 scikit-learn
 pandas
 numpy
-anthropic
+mistralai
 mlflow
 joblib
 httpx

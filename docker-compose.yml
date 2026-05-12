@@ -42,7 +42,7 @@ services:
       - ./models:/app/models
     environment:
       - WHISPER_URL=http://whisper:8001
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY}
       - MLFLOW_TRACKING_URI=http://mlflow:5000
       - DATABASE_URL=postgresql://${POSTGRES_USER:-triageia}:${POSTGRES_PASSWORD:-triageia}@postgres:5432/${POSTGRES_DB:-triageia}
     depends_on:
