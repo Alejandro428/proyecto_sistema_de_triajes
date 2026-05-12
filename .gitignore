@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Environment — never commit real keys
+.env
+
+# Trained model binaries (keep the folder via .gitkeep)
+models/*
+!models/.gitkeep
+
+# Processed data (generated, not source)
+data/processed/
+data/audio/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# MLflow run artifacts
+mlflow/
+
+# IDE
+.vscode/
+.idea/

@@ -1,0 +1,7 @@
+openai-whisper
+transformers
+imbalanced-learn
+anthropic
+mlflow
+plotly
+httpx

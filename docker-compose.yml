@@ -1,0 +1,79 @@
+services:
+
+  jupyter:
+    build: ./services/jupyter
+    container_name: triageia_jupyter
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./data:/home/jovyan/data
+      - ./models:/home/jovyan/models
+      - ./notebooks:/home/jovyan/notebooks
+    environment:
+      - JUPYTER_TOKEN=${JUPYTER_TOKEN:-triageia}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    networks:
+      - triageia_net
+    restart: unless-stopped
+
+  whisper:
+    build: ./services/whisper
+    container_name: triageia_whisper
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+    networks:
+      - triageia_net
+    restart: unless-stopped
+
+  api:
+    build: ./services/api
+    container_name: triageia_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    environment:
+      - WHISPER_URL=http://whisper:8001
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    depends_on:
+      - whisper
+      - mlflow
+    networks:
+      - triageia_net
+    restart: unless-stopped
+
+  streamlit:
+    build: ./services/streamlit
+    container_name: triageia_streamlit
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      - api
+    networks:
+      - triageia_net
+    restart: unless-stopped
+
+  mlflow:
+    build: ./services/mlflow
+    container_name: triageia_mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_data:/mlflow
+    networks:
+      - triageia_net
+    restart: unless-stopped
+
+networks:
+  triageia_net:
+    driver: bridge
+
+volumes:
+  mlflow_data:
