@@ -1,19 +1,28 @@
-from mistralai import Mistral
+import httpx
 
+MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 MODELO = "mistral-large-latest"
 
 
 class LLMService:
     def __init__(self, api_key: str):
-        self.client = Mistral(api_key=api_key)
+        self.api_key = api_key
 
     def procesar_caso(self, system_prompt: str, texto: str) -> str:
-        # Implementado en Fase 1 - Paso 2 (diseño del prompt)
-        response = self.client.chat.complete(
-            model=MODELO,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": texto},
-            ],
+        response = httpx.post(
+            MISTRAL_API_URL,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": MODELO,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user",   "content": texto},
+                ],
+            },
+            timeout=60.0,
         )
-        return response.choices[0].message.content
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"]
