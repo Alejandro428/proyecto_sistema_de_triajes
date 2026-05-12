@@ -8,11 +8,16 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
 
 import pandas as pd
 
 from fase1.prompts import SYSTEM_PROMPT
+
+_SLEEP_ENTRE_LLAMADAS = 1.5   # segundos entre peticiones normales
+_REINTENTOS_MAX       = 6
+_ESPERA_INICIAL_429   = 15    # segundos al primer 429
 
 
 def extraer_json(texto: str) -> dict:
@@ -25,6 +30,24 @@ def extraer_json(texto: str) -> dict:
     if match:
         return json.loads(match.group())
     raise ValueError(f"No se pudo extraer JSON de la respuesta: {texto[:300]}")
+
+
+def _llamar_con_retry(llm, system_prompt: str, texto: str) -> str:
+    """Llama al LLM con reintentos y backoff exponencial ante 429."""
+    espera = _ESPERA_INICIAL_429
+    for intento in range(_REINTENTOS_MAX):
+        try:
+            resultado = llm.procesar_caso(system_prompt, texto)
+            time.sleep(_SLEEP_ENTRE_LLAMADAS)
+            return resultado
+        except Exception as e:
+            if "429" in str(e) and intento < _REINTENTOS_MAX - 1:
+                print(f"  ⏳ Rate limit, esperando {espera}s (intento {intento+1}/{_REINTENTOS_MAX})...")
+                time.sleep(espera)
+                espera = min(espera * 2, 120)
+            else:
+                raise
+    raise RuntimeError("Máximo de reintentos alcanzado")
 
 
 def procesar_dataset(
@@ -46,20 +69,20 @@ def procesar_dataset(
             continue
 
         try:
-            respuesta_raw = llm.procesar_caso(SYSTEM_PROMPT, row["texto_completo"])
+            respuesta_raw = _llamar_con_retry(llm, SYSTEM_PROMPT, row["texto_completo"])
             datos = extraer_json(respuesta_raw)
 
             caso = {
-                "id_caso":               caso_id,
-                "categoria":             row["categoria"],
-                "origen":                row["origen"],
-                "texto_original":        row["texto_completo"],
-                "resumen_es":            datos.get("resumen_es", ""),
-                "entidades_extraidas":   datos.get("entidades_extraidas", []),
+                "id_caso":                caso_id,
+                "categoria":              row["categoria"],
+                "origen":                 row["origen"],
+                "texto_original":         row["texto_completo"],
+                "resumen_es":             datos.get("resumen_es", ""),
+                "entidades_extraidas":    datos.get("entidades_extraidas", []),
                 "entidades_normalizadas": datos.get("entidades_normalizadas", []),
-                "triage_real":           datos.get("triage_real", ""),
-                "justificacion":         datos.get("justificacion", ""),
-                "score_ansiedad":        float(datos.get("score_ansiedad", 0.0)),
+                "triage_real":            datos.get("triage_real", ""),
+                "justificacion":          datos.get("justificacion", ""),
+                "score_ansiedad":         float(datos.get("score_ansiedad", 0.0)),
             }
 
             db.insertar_caso(caso)
