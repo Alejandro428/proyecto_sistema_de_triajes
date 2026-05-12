@@ -1,0 +1,96 @@
+Memoria actualizada. Aquí tienes el resumen para mañana:
+
+  ---
+  Resumen para mañana — TriageIA
+
+  Contexto rápido del proyecto
+
+  Sistema de triaje médico que clasifica pacientes según el Protocolo Manchester (C1-C5) a partir de audio. Dataset: 272 entrevistas clínicas del dataset Fareez. Stack: Docker
+  con 5 servicios (postgres, api, whisper, mlflow, streamlit). LLM: Mistral large via REST directo con httpx.
+
+  ---
+  Lo que pasó hoy
+
+  El pipeline de Fase 1 llegó al caso ~239/270 y empezó a fallar con error 429 Too Many Requests (Mistral cortó porque enviábamos peticiones demasiado rápido). Los 238 casos ya
+  procesados están guardados en PostgreSQL — no se pierden.
+
+  Fix aplicado (commit de2d676): labeler.py ahora espera 1.5s entre cada petición y si aún así recibe un 429, espera 15s, luego 30s, 60s... hasta 6 intentos antes de rendirse.
+
+  ---
+  Paso 1 — Relanzar el pipeline para completar Fase 1
+
+  git pull
+  docker-compose up --build api
+
+  Luego llamar al endpoint:
+  curl -X POST http://localhost:8000/fase1/generate-csv
+
+  En los logs verás que salta los 238 ya procesados (⏭ ya procesado) y procesa solo los ~32 restantes. Tardará más (1.5s por caso) pero no volverá a dar 429.
+
+  ---
+  Paso 2 — Verificar que Fase 1 está completa
+
+  2a. Contar cuántos casos hay en la base de datos:
+  docker exec -it triageia_postgres psql -U triageia -d triageia -c "SELECT COUNT(*) FROM casos;"
+  Debe dar 270.
+
+  2b. Ver distribución de clases (Ground Truth):
+  docker exec -it triageia_postgres psql -U triageia -d triageia -c "SELECT triage_real, COUNT(*) FROM casos GROUP BY triage_real ORDER BY triage_real;"
+  Esperamos algo tipo: C2 ~15, C3 ~180, C4 ~60, C5 ~15 (predominio de C3 por ser dataset respiratorio).
+
+  2c. Verificar que el master.csv se generó:
+  docker exec -it triageia_api ls /app/data/processed/
+  Debe aparecer conversaciones.csv y master.csv. Si quieres ver cuántas filas tiene el master.csv:
+  docker exec -it triageia_api wc -l /app/data/processed/master.csv
+  Debe ser 271 (270 datos + 1 cabecera).
+
+  2d. Ver un caso de ejemplo para comprobar la calidad:
+  docker exec -it triageia_postgres psql -U triageia -d triageia -c "SELECT id_caso, triage_real, score_ansiedad, resumen_es FROM casos LIMIT 5;"
+
+  2e. Auditoría manual rápida (~5 min):
+  Mirar 5-10 casos en la BD y comprobar que:
+  - triage_real tiene valores C1-C5 (no vacíos ni "")
+  - entidades y entidades_norm son JSON válidos con términos médicos
+  - justificacion tiene texto coherente con el triage asignado
+
+  ---
+  Lo que viene después — Fase 2 (ML)
+
+  Una vez Fase 1 confirmada con 270 casos y master.csv correcto:
+
+  1. Análisis exploratorio del master.csv (distribución de clases, desequilibrio)
+  2. Preprocesamiento: feature engineering a partir de las entidades y el score de ansiedad
+  3. Entrenamiento del clasificador (RandomForest/XGBoost como baseline)
+  4. Gestión del imbalance con SMOTE o class_weight
+  5. Métricas clave: recall por clase — especialmente importante no tener under-triage (predecir C4 cuando es C1 es peligroso)
+  6. Guardar el modelo con MLflow y joblib
+  7. Nuevo endpoint POST /fase2/predict en la API
+
+  ---
+  Resumen del estado actual del repo
+
+  ┌───────────────────────────────┬──────────────────────────────────────────┐
+  │          Componente           │                  Estado                  │
+  ├───────────────────────────────┼──────────────────────────────────────────┤
+  │ docker-compose.yml            │ ✅ Completo, 5 servicios                 │
+  ├───────────────────────────────┼──────────────────────────────────────────┤
+  │ infra/postgres/init.sql       │ ✅ Tablas casos y predicciones           │
+  ├───────────────────────────────┼──────────────────────────────────────────┤
+  │ services/api/fase1/parser.py  │ ✅ Parsea .info → conversaciones.csv     │
+  ├───────────────────────────────┼──────────────────────────────────────────┤
+  │ services/api/fase1/prompts.py │ ✅ Few-shot + Manchester + normalización │
+  ├───────────────────────────────┼──────────────────────────────────────────┤
+  │ services/api/fase1/labeler.py │ ✅ Pipeline con retry anti-429           │
+  ├───────────────────────────────┼──────────────────────────────────────────┤
+  │ services/api/services/llm.py  │ ✅ httpx directo a Mistral               │
+  ├───────────────────────────────┼──────────────────────────────────────────┤
+  │ services/api/services/db.py   │ ✅ PostgreSQL, reanudable                │
+  ├───────────────────────────────┼──────────────────────────────────────────┤
+  │ services/api/routes/fase1.py  │ ✅ Endpoint /fase1/generate-csv          │
+  ├───────────────────────────────┼──────────────────────────────────────────┤
+  │ Pipeline Fase 1 completo      │ ⚠️  ~238/270 hechos, relanzar mañana      │
+  ├───────────────────────────────┼──────────────────────────────────────────┤
+  │ Fase 2 (ML)                   │ ❌ Pendiente                             │
+  ├───────────────────────────────┼──────────────────────────────────────────┤
+  │ Fase 3 (Streamlit)            │ ❌ Pendiente                             │
+  └───────────────────────────────┴──────────────────────────────────────────┘
