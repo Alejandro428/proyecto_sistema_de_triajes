@@ -1,5 +1,25 @@
 services:
 
+  postgres:
+    image: postgres:16
+    container_name: triageia_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-triageia}
+      - POSTGRES_USER=${POSTGRES_USER:-triageia}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-triageia}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - triageia_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-triageia}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   jupyter:
     build: ./services/jupyter
     container_name: triageia_jupyter
@@ -13,6 +33,10 @@ services:
       - JUPYTER_TOKEN=${JUPYTER_TOKEN:-triageia}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-triageia}:${POSTGRES_PASSWORD:-triageia}@postgres:5432/${POSTGRES_DB:-triageia}
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - triageia_net
     restart: unless-stopped
@@ -40,9 +64,14 @@ services:
       - WHISPER_URL=http://whisper:8001
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-triageia}:${POSTGRES_PASSWORD:-triageia}@postgres:5432/${POSTGRES_DB:-triageia}
     depends_on:
-      - whisper
-      - mlflow
+      postgres:
+        condition: service_healthy
+      whisper:
+        condition: service_started
+      mlflow:
+        condition: service_started
     networks:
       - triageia_net
     restart: unless-stopped
@@ -76,4 +105,5 @@ networks:
     driver: bridge
 
 volumes:
+  postgres_data:
   mlflow_data:
