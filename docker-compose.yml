@@ -20,27 +20,6 @@ services:
       timeout: 5s
       retries: 5
 
-  jupyter:
-    build: ./services/jupyter
-    container_name: triageia_jupyter
-    ports:
-      - "8888:8888"
-    volumes:
-      - ./data:/home/jovyan/data
-      - ./models:/home/jovyan/models
-      - ./notebooks:/home/jovyan/notebooks
-    environment:
-      - JUPYTER_TOKEN=${JUPYTER_TOKEN:-triageia}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - MLFLOW_TRACKING_URI=http://mlflow:5000
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-triageia}:${POSTGRES_PASSWORD:-triageia}@postgres:5432/${POSTGRES_DB:-triageia}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - triageia_net
-    restart: unless-stopped
-
   whisper:
     build: ./services/whisper
     container_name: triageia_whisper
