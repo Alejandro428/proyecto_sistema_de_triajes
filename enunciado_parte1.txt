@@ -1,0 +1,39 @@
+PROYECTO 3 :: Sistema de Triaje
+Curso de Especialización IA-BD 25/26
+Presentación
+El Estudio
+Guía Clínica
+Hoja de Ruta
+Proyecto 3: Innovación en Inteligencia Artificial Sanitaria
+TriageIA: El Futuro de la
+Priorización Médica Automática
+📅
+Temporalización
+Mayo, 2026 (4 semanas)
+
+👥
+Organización
+Equipos de 2 alumnos
+
+👨‍🏫
+Equipo Docente
+Toni Cambra, Luis García y Lorenzo González
+
+01
+¿Qué es el Triaje en Urgencias?
+El triaje es el proceso de clasificación de pacientes basándose en su gravedad clínica. En un entorno saturado, garantiza que el paciente con un riesgo vital inminente sea atendido de inmediato.
+
+Siguiendo el Protocolo Manchester (detallado en la Guía Clínica), se buscan discriminadores para asignar un nivel de urgencia del C1 al C5.
+
+El Desafío del Dato
+Para entrenar una IA en este ámbito, necesitamos diálogos reales. En la sección de El Estudio, exploraremos el corpus de 272 entrevistas simuladas.
+
+02
+El Objetivo de TriageIA
+Desarrollar una herramienta de soporte a la decisión clínica capaz de transformar la voz del paciente en una prioridad médica estructurada.
+
+Extracción NER
+Identificar síntomas clínicos en español e inglés.
+
+Clasificación
+Predicción de niveles Manchester con Recall > 80%.

@@ -1,0 +1,66 @@
+Sistema Manchester
+La lógica de priorización que vuestra IA debe replicar.
+
+C1 - Rojo
+0 min
+Emergencia
+
+C2 - Naranja
+10 min
+Muy Urgente
+
+C3 - Amarillo
+60 min
+Urgente
+
+C4 - Verde
+120 min
+Menos Urgente
+
+C5 - Azul
+240 min
+No Urgente
+
+💡
+Concepto Clave: El Ground Truth
+En el contexto de este proyecto, el Ground Truth es la etiqueta de prioridad absoluta asignada a cada caso clínico según el criterio experto. Representa la "realidad objetiva" que vuestra Inteligencia Artificial debe aprender a replicar.
+
+Al realizar el etiquetado manual en la Semana 1, estáis definiendo el estándar de oro médico. Si vuestro Ground Truth es incorrecto o inconsistente, vuestro modelo nunca podrá tomar decisiones seguras en urgencias.
+
+1. Mapa Clínico del Dataset
+El dataset de *Fareez et al.* simula exámenes clínicos reales (OSCE). No encontraréis patologías aleatorias; el corpus se centra en grupos específicos que debéis aprender a identificar:
+
+RES (Respiratorio)
+Es el grupo principal (214 casos). Encontraréis crisis de asma, neumonías y cuadros gripales.
+
+MSK (Musculoesquelético)
+46 casos. Principalmente esguinces, lumbagos y casos de gota.
+
+CAR (Cardiaco)
+5 casos críticos. Atentos a las anginas y posibles infartos agudos de miocardio.
+
+GAS (Gastrointestinal)
+6 casos. Gastroenteritis y sospechas de apendicitis.
+
+2. Diccionario Base (Normalización Obligatoria)
+Para evitar la dispersión de datos, **no podéis inventar términos**. Si el paciente dice "me silba el pecho", debéis mapearlo al término clínico correspondiente utilizando esta tabla como fuente de verdad:
+
+Síntoma detectado (Input)	Término Clínico (Target)	Prioridad Sugerida
+"Me ahogo", "No puedo respirar", "Falta de aire"	Disnea	C1 (Súbita) / C2 (Aguda)
+"Pitos", "Silbidos al inhalar"	Sibilancias	C2 / C3
+"Presión fuerte", "Como un elefante en el pecho"	Dolor Torácico Opresivo	C2 (Urgencia Vital)
+"Ardiendo", "Tengo mucha calentura"	Fiebre / Hipertermia	C3
+"Perdió el sentido", "Se desplomó"	Síncope	C1
+"Hinchado", "Como un globo"	Edema / Inflamación	C4
+3. Estrategia de Etiquetado Asistido (LLM)
+01
+Instrucciones de Sistema
+Configurad el LLM con un rol de experto clínico que siga estrictamente el Protocolo Manchester para clasificar las transcripciones.
+
+02
+Uso de Few-Shot
+Proporcionad ejemplos reales (Input/Output) en el prompt para que la IA aprenda a normalizar términos y estructurar la salida.
+
+03
+Estructura JSON
+Aseguraos de que el modelo devuelva siempre un formato estructurado (JSON) que incluya entidades, nivel de triaje y justificación clínica.
