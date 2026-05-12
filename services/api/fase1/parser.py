@@ -4,6 +4,7 @@ Reconstruye las conversaciones clínicas completas agrupando
 y ordenando los fragmentos de cada caso por timestamp.
 """
 
+import os
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -81,7 +82,7 @@ def cargar_dataset(data_dir: Path) -> dict[str, Caso]:
 
 
 if __name__ == "__main__":
-    data_dir = Path(__file__).parents[3] / "data" / "raw"
+    data_dir = Path(os.getenv("DATA_DIR", "/app/data/raw"))
     casos = cargar_dataset(data_dir)
 
     # Resumen general
