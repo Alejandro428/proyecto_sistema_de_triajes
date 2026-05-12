@@ -10,6 +10,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import pandas as pd
+
 
 LINE_PATTERN = re.compile(
     r"audio/([A-Z]+)(\d+)\.mp3\[(\d+\.\d+),(\d+\.\d+)\]\t(.+)"
@@ -25,9 +27,9 @@ class Turno:
 
 @dataclass
 class Caso:
-    id: str                      # ej: RES0134
-    categoria: str               # RES, MSK, CAR, GAS
-    origen: str                  # train / test
+    id: str
+    categoria: str
+    origen: str
     turnos: list[Turno] = field(default_factory=list)
 
     @property
@@ -56,17 +58,12 @@ def parsear_archivo(ruta: Path, origen: str) -> dict[str, Caso]:
             caso_id = f"{categoria}{numero}"
 
             if caso_id not in casos:
-                casos[caso_id] = Caso(
-                    id=caso_id,
-                    categoria=categoria,
-                    origen=origen,
-                )
+                casos[caso_id] = Caso(id=caso_id, categoria=categoria, origen=origen)
 
             casos[caso_id].turnos.append(
                 Turno(start=float(start), end=float(end), text=texto.strip())
             )
 
-    # Ordenar cada caso por timestamp de inicio
     for caso in casos.values():
         caso.turnos.sort(key=lambda t: t.start)
 
@@ -74,31 +71,48 @@ def parsear_archivo(ruta: Path, origen: str) -> dict[str, Caso]:
 
 
 def cargar_dataset(data_dir: Path) -> dict[str, Caso]:
-    """Carga y combina train y test en un único diccionario."""
     casos = {}
     casos.update(parsear_archivo(data_dir / "medical_train.info", origen="train"))
     casos.update(parsear_archivo(data_dir / "medical_test.info", origen="test"))
     return casos
 
 
+def exportar_csv(casos: dict[str, Caso], output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {
+            "id_caso":        caso.id,
+            "categoria":      caso.categoria,
+            "origen":         caso.origen,
+            "texto_completo": caso.texto_completo,
+            "num_turnos":     caso.num_turnos,
+        }
+        for caso in casos.values()
+    ]
+    pd.DataFrame(rows).to_csv(output_path, index=False, encoding="utf-8")
+    print(f"conversaciones.csv guardado en {output_path} ({len(rows)} filas)")
+
+
 if __name__ == "__main__":
-    data_dir = Path(os.getenv("DATA_DIR", "/app/data/raw"))
+    data_dir  = Path(os.getenv("DATA_DIR", "/app/data/raw"))
+    cases_out = Path(os.getenv("DATA_DIR", "/app/data")).parent / "data" / "processed" / "conversaciones.csv"
+
     casos = cargar_dataset(data_dir)
 
-    # Resumen general
     categorias = defaultdict(int)
     for caso in casos.values():
         categorias[caso.categoria] += 1
 
     print(f"\nTotal de casos cargados: {len(casos)}")
-    print(f"Distribucion por categoria:")
+    print("Distribucion por categoria:")
     for cat, n in sorted(categorias.items()):
         print(f"  {cat}: {n} casos")
 
-    # Ejemplo: mostrar la conversación completa de un caso
     ejemplo_id = "RES0001"
     if ejemplo_id in casos:
         caso = casos[ejemplo_id]
         print(f"\nEjemplo — {caso.id} ({caso.categoria}, {caso.origen})")
         print(f"Turnos: {caso.num_turnos}")
         print(f"Texto completo:\n{caso.texto_completo[:600]}...")
+
+    exportar_csv(casos, Path("/app/data/processed/conversaciones.csv"))
