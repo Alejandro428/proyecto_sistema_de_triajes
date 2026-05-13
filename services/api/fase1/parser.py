@@ -81,11 +81,10 @@ def exportar_csv(casos: dict[str, Caso], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     rows = [
         {
-            "id_caso":        caso.id,
-            "categoria":      caso.categoria,
-            "origen":         caso.origen,
-            "texto_completo": caso.texto_completo,
-            "num_turnos":     caso.num_turnos,
+            "id_caso":      caso.id,
+            "categoria":    caso.categoria,
+            "transcripcion": caso.texto_completo,
+            "num_turnos":   caso.num_turnos,
         }
         for caso in casos.values()
     ]

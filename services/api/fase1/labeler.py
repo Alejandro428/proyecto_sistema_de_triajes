@@ -1,7 +1,7 @@
 """
-Fase 1 - Paso 2/3: Etiquetado con LLM y generación del master.csv
+Fase 1 - Paso 2: Etiquetado con LLM y generación del master.csv
 Lee conversaciones.csv, llama a Mistral por cada caso,
-guarda en PostgreSQL y acumula el master.csv incremetalmente.
+guarda en PostgreSQL y acumula el master.csv incrementalmente.
 """
 
 import json
@@ -15,13 +15,13 @@ import pandas as pd
 
 from fase1.prompts import SYSTEM_PROMPT
 
-_SLEEP_ENTRE_LLAMADAS = 1.5   # segundos entre peticiones normales
+
+_SLEEP_ENTRE_LLAMADAS = 1.5
 _REINTENTOS_MAX       = 6
-_ESPERA_INICIAL_429   = 15    # segundos al primer 429
+_ESPERA_INICIAL_429   = 15
 
 
 def extraer_json(texto: str) -> dict:
-    """Extrae el JSON de la respuesta del LLM aunque venga con texto extra."""
     try:
         return json.loads(texto)
     except json.JSONDecodeError:
@@ -33,7 +33,6 @@ def extraer_json(texto: str) -> dict:
 
 
 def _llamar_con_retry(llm, system_prompt: str, texto: str) -> str:
-    """Llama al LLM con reintentos y backoff exponencial ante 429."""
     espera = _ESPERA_INICIAL_429
     for intento in range(_REINTENTOS_MAX):
         try:
@@ -50,12 +49,7 @@ def _llamar_con_retry(llm, system_prompt: str, texto: str) -> str:
     raise RuntimeError("Máximo de reintentos alcanzado")
 
 
-def procesar_dataset(
-    llm,
-    db,
-    conversaciones_csv: Path,
-    master_csv: Path,
-) -> None:
+def procesar_dataset(llm, db, conversaciones_csv: Path, master_csv: Path) -> None:
     df = pd.read_csv(conversaciones_csv)
     total = len(df)
     procesados = 0
@@ -69,27 +63,26 @@ def procesar_dataset(
             continue
 
         try:
-            respuesta_raw = _llamar_con_retry(llm, SYSTEM_PROMPT, row["texto_completo"])
+            respuesta_raw = _llamar_con_retry(llm, SYSTEM_PROMPT, row["transcripcion"])
             datos = extraer_json(respuesta_raw)
 
             caso = {
-                "id_caso":                caso_id,
-                "categoria":              row["categoria"],
-                "origen":                 row["origen"],
-                "texto_original":         row["texto_completo"],
-                "resumen_es":             datos.get("resumen_es", ""),
-                "entidades_extraidas":    datos.get("entidades_extraidas", []),
-                "entidades_normalizadas": datos.get("entidades_normalizadas", []),
-                "triage_real":            datos.get("triage_real", ""),
-                "justificacion":          datos.get("justificacion", ""),
-                "score_ansiedad":         float(datos.get("score_ansiedad", 0.0)),
+                "id_caso":            caso_id,
+                "categoria":          row["categoria"],
+                "transcripcion":      row["transcripcion"],
+                "resumen":            datos.get("resumen_es", ""),
+                "sintomas_detectados": datos.get("entidades_extraidas", []),
+                "terminos_clinicos":  datos.get("entidades_normalizadas", []),
+                "nivel_urgencia":     datos.get("triage_real", ""),
+                "razonamiento":       datos.get("justificacion", ""),
+                "nivel_ansiedad":     float(datos.get("score_ansiedad", 0.0)),
             }
 
             db.insertar_caso(caso)
             _guardar_fila_csv(caso, master_csv)
 
             procesados += 1
-            print(f"✓ [{i+1}/{total}] {caso_id} → {caso['triage_real']}  ansiedad={caso['score_ansiedad']}")
+            print(f"✓ [{i+1}/{total}] {caso_id} → {caso['nivel_urgencia']}  ansiedad={caso['nivel_ansiedad']}")
 
         except Exception as e:
             errores += 1
@@ -100,7 +93,6 @@ def procesar_dataset(
 
 
 def _guardar_fila_csv(caso: dict, master_csv: Path) -> None:
-    """Añade una fila al master.csv de forma incremental."""
     master_csv.parent.mkdir(parents=True, exist_ok=True)
     fila = pd.DataFrame([caso])
     if not master_csv.exists():

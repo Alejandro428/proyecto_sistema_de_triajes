@@ -25,9 +25,10 @@ class DatabaseService:
     def insertar_caso(self, caso: dict) -> None:
         sql = """
             INSERT INTO casos
-                (id_caso, categoria, origen, texto_original, resumen_es,
-                 entidades, entidades_norm, triage_real, justificacion, score_ansiedad)
-            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s)
+                (id_caso, categoria, transcripcion, resumen,
+                 sintomas_detectados, terminos_clinicos,
+                 nivel_urgencia, razonamiento, nivel_ansiedad)
+            VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s)
             ON CONFLICT (id_caso) DO NOTHING
         """
         conn = self._connect()
@@ -36,14 +37,13 @@ class DatabaseService:
                 cur.execute(sql, (
                     caso["id_caso"],
                     caso["categoria"],
-                    caso["origen"],
-                    caso["texto_original"],
-                    caso.get("resumen_es"),
-                    json.dumps(caso.get("entidades_extraidas", [])),
-                    json.dumps(caso.get("entidades_normalizadas", [])),
-                    caso.get("triage_real"),
-                    caso.get("justificacion"),
-                    caso.get("score_ansiedad", 0.0),
+                    caso["transcripcion"],
+                    caso.get("resumen"),
+                    json.dumps(caso.get("sintomas_detectados", [])),
+                    json.dumps(caso.get("terminos_clinicos", [])),
+                    caso.get("nivel_urgencia"),
+                    caso.get("razonamiento"),
+                    caso.get("nivel_ansiedad", 0.0),
                 ))
             conn.commit()
         finally:
@@ -51,8 +51,9 @@ class DatabaseService:
 
     def obtener_casos(self) -> list[dict]:
         sql = """
-            SELECT id_caso, categoria, origen, texto_original, resumen_es,
-                   entidades, entidades_norm, triage_real, justificacion, score_ansiedad
+            SELECT id_caso, categoria, transcripcion, resumen,
+                   sintomas_detectados, terminos_clinicos,
+                   nivel_urgencia, razonamiento, nivel_ansiedad
             FROM casos
             ORDER BY id_caso
         """
@@ -70,19 +71,20 @@ class DatabaseService:
     def insertar_prediccion(self, prediccion: dict) -> None:
         sql = """
             INSERT INTO predicciones
-                (texto_audio, entidades, score_ansiedad, prediccion, ground_truth, validacion)
+                (transcripcion, terminos_clinicos, nivel_ansiedad,
+                 nivel_predicho, nivel_urgencia_real, resultado)
             VALUES (%s, %s::jsonb, %s, %s, %s, %s)
         """
         conn = self._connect()
         try:
             with conn.cursor() as cur:
                 cur.execute(sql, (
-                    prediccion["texto_audio"],
-                    json.dumps(prediccion.get("entidades", [])),
-                    prediccion.get("score_ansiedad", 0.0),
-                    prediccion["prediccion"],
-                    prediccion.get("ground_truth"),
-                    prediccion.get("validacion"),
+                    prediccion["transcripcion"],
+                    json.dumps(prediccion.get("terminos_clinicos", [])),
+                    prediccion.get("nivel_ansiedad", 0.0),
+                    prediccion["nivel_predicho"],
+                    prediccion.get("nivel_urgencia_real"),
+                    prediccion.get("resultado"),
                 ))
             conn.commit()
         finally:
