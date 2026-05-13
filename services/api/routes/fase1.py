@@ -35,11 +35,25 @@ def _pipeline(llm: LLMService, db: DatabaseService) -> None:
     conversaciones_csv = DATA_DIR / "processed" / "conversaciones.csv"
     master_csv         = DATA_DIR / "processed" / "master.csv"
 
-    print("→ Paso 1: parseando archivos .info...")
-    casos = cargar_dataset(raw_dir)
-    exportar_csv(casos, conversaciones_csv)
+    try:
+        print("→ Paso 1: parseando archivos .info...")
+        print(f"   Buscando .info en: {raw_dir}")
+        if not raw_dir.exists():
+            raise FileNotFoundError(f"Directorio raw no encontrado: {raw_dir}")
 
-    print(f"→ Paso 2: etiquetando {len(casos)} casos con Mistral...")
-    procesar_dataset(llm, db, conversaciones_csv, master_csv)
+        casos = cargar_dataset(raw_dir)
+        if not casos:
+            raise ValueError("No se encontraron casos en los archivos .info")
+        exportar_csv(casos, conversaciones_csv)
 
-    print("✓ Pipeline Fase 1 completado.")
+        print(f"→ Paso 2: etiquetando {len(casos)} casos con Mistral...")
+        print(f"   conversaciones.csv: {conversaciones_csv}")
+        print(f"   master.csv destino: {master_csv}")
+        procesar_dataset(llm, db, conversaciones_csv, master_csv)
+
+        print("✓ Pipeline Fase 1 completado.")
+
+    except Exception as e:
+        import traceback
+        print(f"✗ ERROR en pipeline Fase 1: {e}", flush=True)
+        traceback.print_exc()
