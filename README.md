@@ -1,7 +1,7 @@
 # TriageIA — Sistema de Triaje Médico con IA
 
 Proyecto del Curso de Especialización IA-BD 25/26.
-Herramienta de soporte a la decisión clínica que transforma la voz del paciente en una prioridad médica estructurada siguiendo el **Protocolo Manchester (C1–C5)**.
+Herramienta de soporte a la decisión clínica que transforma entrevistas clínicas en una prioridad médica estructurada siguiendo el **Protocolo Manchester (C1–C5)**.
 
 Basado en el corpus de **Fareez et al. (2022)** — 272 entrevistas clínicas simuladas (metodología OSCE), publicado en *Nature Scientific Data*.
 
@@ -9,11 +9,11 @@ Basado en el corpus de **Fareez et al. (2022)** — 272 entrevistas clínicas si
 
 ## Qué hace este sistema
 
-1. Ingiere transcripciones de entrevistas clínicas
+1. Ingiere transcripciones de entrevistas clínicas desde archivos `.info`
 2. Las enriquece con un LLM (Mistral): extrae síntomas, los normaliza a terminología médica estándar, asigna un nivel de urgencia Manchester y calcula un score de ansiedad
-3. Genera un dataset etiquetado con el que entrena un modelo de Machine Learning
-4. Usa ese modelo para predecir el nivel de urgencia de nuevos pacientes
-5. Registra todo el flujo con trazabilidad completa por caso
+3. Genera un dataset etiquetado (`dataset_entrenamiento.csv`) con el que entrena un modelo de Machine Learning
+4. Usa ese modelo para predecir el nivel de urgencia de nuevos pacientes (Fase 2)
+5. Registra todo el flujo con trazabilidad completa por caso (GUID único por entrevista)
 
 ---
 
@@ -23,32 +23,36 @@ Basado en el corpus de **Fareez et al. (2022)** — 272 entrevistas clínicas si
 data/raw/ (.info)
      │
      ▼
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────────┐
-│  dag_ingestion  │────▶│dag_llm_enrichment│────▶│ dag_model_training  │
-│  Parsea .info   │     │  Llama a Mistral  │     │ Entrena RandomForest│
-│  → Postgres     │     │  → Postgres       │     │ → MinIO (modelo.pkl)│
-│  → MinIO        │     │                   │     │ → MinIO (master.csv)│
-└─────────────────┘     └──────────────────┘     └─────────────────────┘
-        │                        │                          │
-        └────────────────────────┴──────────────────────────┘
-                                 │
-                          ┌──────▼──────┐
-                          │  PostgreSQL  │
-                          │  entrevista  │  ← tracking de estados
-                          │  casos       │  ← datos enriquecidos
-                          │  predicciones│  ← Fase 2
-                          └─────────────┘
+┌──────────────────┐     ┌──────────────────────┐     ┌─────────────────────────┐
+│  dag_ingestion   │────▶│  dag_llm_enrichment  │────▶│   dag_model_training    │
+│                  │     │                      │     │                         │
+│ Parsea .info     │     │ Llama a Mistral       │     │ Lee dataset_entren.csv  │
+│ → conversaciones │     │ → JSON por caso       │     │ Entrena RandomForest    │
+│   .csv en MinIO  │     │ → dataset_entren.csv  │     │ → modelo.pkl en MinIO   │
+│ → Postgres       │     │   en MinIO            │     │ → 3 gráficas en MinIO   │
+│                  │     │ → Postgres            │     │ → Postgres              │
+└──────────────────┘     └──────────────────────┘     └─────────────────────────┘
+  (dispara auto →)          (dispara auto →)
 ```
 
 ### Servicios Docker
 
 | Servicio | Puerto | Rol |
 |---|---|---|
-| `postgres` | 5432 | Base de datos: tracking de estados, datos enriquecidos, predicciones |
-| `minio` | 9000 / 9001 | Almacenamiento de archivos: textos originales, datasets, modelos entrenados |
+| `postgres` | 5432 | Tracking de estados del workflow (tabla Entrevista) |
+| `minio` | 9000 / 9001 | Almacenamiento de archivos: textos, JSONs, datasets, modelos, gráficas |
 | `airflow-webserver` | 8080 | UI de Airflow — lanzar DAGs y ver logs |
 | `airflow-scheduler` | — | Motor que ejecuta los DAGs |
 | `api` | 8000 | Endpoint de predicción (Fase 2, pendiente) |
+
+### Buckets MinIO
+
+| Bucket | Contenido |
+|---|---|
+| `textos/` | Transcripciones originales: `{guid}.txt` |
+| `enriquecidos/` | JSON con análisis de Mistral por caso: `{guid}.json` (intermedio, para reanudar si falla) |
+| `datasets/` | `conversaciones.csv` y `dataset_entrenamiento.csv` |
+| `modelos/` | `modelo_triageia.pkl` + 3 gráficas PNG |
 
 ---
 
@@ -64,35 +68,90 @@ data/raw/ (.info)
 
 ---
 
+## Base de datos — tabla Entrevista
+
+Una única tabla para tracking del workflow. Los datos clínicos viven en MinIO.
+
+```sql
+GUID_Entrevista             -- clave primaria (ej: RES1, CAR3, MSK47)
+URL_Texto_Original          -- minio://textos/{guid}.txt
+URL_Dataset_Generado        -- minio://datasets/dataset_entrenamiento.csv
+URL_Modelo_Entrenado        -- minio://modelos/modelo_triageia.pkl
+Inicio/Fin_Solicitud        -- timestamps de ingesta
+Inicio/Fin_Preprocesamiento
+Inicio/Fin_Extraccion_Entidades
+Inicio/Fin_Normalizacion
+Inicio/Fin_Etiquetado
+Inicio/Fin_Score
+Inicio/Fin_Entrenamiento
+Motor_Workflow              -- siempre "Airflow"
+Workflow_Id
+Estado                      -- INGESTED → PROCESANDO → SCORE_CALCULADO → DATASET_GENERADO → MODELO_ENTRENADO
+```
+
+---
+
 ## Fases del proyecto
 
-### Fase 1 — Ingeniería de datos y generación del dataset (EN CURSO)
+### Fase 1 — Ingeniería de datos y entrenamiento del modelo (COMPLETADA)
 
-**Objetivo:** Generar el dataset etiquetado que usará el modelo ML.
+**Objetivo:** Generar el dataset etiquetado y entrenar el modelo ML.
 
-**Tres DAGs en Airflow:**
+**Tres DAGs en Airflow que se lanzan en cadena:**
 
-| DAG | Qué hace | Estado en BD al completar |
-|---|---|---|
-| `dag_ingestion` | Parsea los archivos `.info`, guarda cada entrevista en Postgres y el texto en MinIO | `INGESTED` |
-| `dag_llm_enrichment` | Llama a Mistral por cada caso: extrae síntomas, normaliza términos, asigna nivel Manchester (C1-C5) y calcula score de ansiedad | `SCORE_CALCULADO` |
-| `dag_model_training` | Lee todos los casos enriquecidos, entrena un RandomForest, guarda el modelo y el master.csv en MinIO | `MODELO_ENTRENADO` |
+| DAG | Input | Output | Estado final en BD |
+|---|---|---|---|
+| `dag_ingestion` | Archivos `.info` en `data/raw/` | `conversaciones.csv` en MinIO | `INGESTED` |
+| `dag_llm_enrichment` | `conversaciones.csv` | `dataset_entrenamiento.csv` en MinIO | `DATASET_GENERADO` |
+| `dag_model_training` | `dataset_entrenamiento.csv` | `modelo_triageia.pkl` + 3 gráficas en MinIO | `MODELO_ENTRENADO` |
 
-**Resultado final de Fase 1:** `master.csv` con 272 casos etiquetados y `modelo_triageia.pkl` en MinIO.
+**Columnas de `conversaciones.csv`:**
+
+| Columna | Descripción |
+|---|---|
+| `guid` | Identificador único del caso (RES1, CAR3...) |
+| `origen` | `Dataset` o `Simulación` |
+| `categoria` | Categoría médica: RES / MSK / GAS / CAR |
+| `texto` | Transcripción completa de la entrevista |
+
+**Columnas de `dataset_entrenamiento.csv`** (según enunciado):
+
+| Columna | Descripción |
+|---|---|
+| `guid` | Identificador único del caso |
+| `origen` | `Dataset` o `Simulación` |
+| `categoria` | Categoría médica |
+| `texto` | Transcripción completa |
+| `resumen` | Resumen en español generado por Mistral |
+| `entidades` | Síntomas tal como aparecen en el texto (lista) |
+| `entidades_normalizadas` | Términos clínicos estandarizados (lista) |
+| `etiqueta` | Nivel Manchester asignado por Mistral: C1-C5 |
+| `razonamiento` | Justificación clínica del nivel asignado |
+| `score_ansiedad` | Score de ansiedad 0.0–1.0 |
+| `prediccion_entrenada` | Vacío en Fase 1, se rellena en Fase 2 |
+
+**Artefactos generados por `dag_model_training`:**
+- `modelo_triageia.pkl` — RandomForest + MultiLabelBinarizer (para usar en Fase 2)
+- `grafica_distribucion.png` — Distribución de niveles C1-C5 en el dataset
+- `grafica_confusion.png` — Matriz de confusión sobre el 20% de test
+- `grafica_importancia.png` — Top 15 términos clínicos más relevantes
 
 **Cómo ejecutar Fase 1:**
 ```bash
-# Arrancar todo
+# Arrancar todo (la primera vez o tras cambios de código)
+docker-compose down -v
 docker-compose up --build
 
-# Entrar a la UI de Airflow
+# Esperar ~1 minuto a que Airflow esté listo
 # http://localhost:8080  →  usuario: admin  /  contraseña: admin
 
-# Lanzar los DAGs en orden:
-# 1. dag_ingestion
-# 2. dag_llm_enrichment   (tarda ~10 min por rate limit de Mistral)
-# 3. dag_model_training
+# En la UI de Airflow:
+# → Activar y lanzar dag_ingestion
+# → dag_llm_enrichment se lanza automáticamente al terminar (tarda ~10 min por rate limit de Mistral)
+# → dag_model_training se lanza automáticamente al terminar dag_llm_enrichment
 ```
+
+> **Nota:** si dag_llm_enrichment falla a mitad, puedes re-lanzarlo sin perder trabajo: los casos ya procesados tienen un JSON en MinIO y se saltan automáticamente.
 
 ---
 
@@ -100,15 +159,10 @@ docker-compose up --build
 
 **Objetivo:** Usar el modelo entrenado en Fase 1 para predecir el nivel de urgencia de nuevos pacientes.
 
-**Dos DAGs planificados:**
-
 | DAG | Qué hace |
 |---|---|
-| `dag_prediction` | Detecta nuevos textos en MinIO `predict/`, carga el modelo, genera predicción, guarda en Postgres |
-| `dag_evaluation` | Compara predicciones con el nivel real (si se dispone de él), calcula accuracy/recall/F1, guarda métricas |
-
-**Input:** archivo `.txt` con la transcripción del nuevo paciente en el bucket `predict/` de MinIO.
-**Output:** nivel de urgencia predicho (C1-C5) guardado en la tabla `predicciones` de Postgres.
+| `dag_prediction` | Detecta nuevos textos, carga el modelo, genera predicción, guarda en Postgres |
+| `dag_evaluation` | Compara predicciones con el nivel real, calcula accuracy/recall/F1 |
 
 ---
 
@@ -116,42 +170,10 @@ docker-compose up --build
 
 **Objetivo:** Interfaz de hospital para mostrar el sistema de forma visual.
 
-Se añadirá un contenedor Streamlit al `docker-compose.yml` con:
 - Subida de audio o texto de un nuevo paciente
-- Llamada al endpoint de predicción de la API
-- Visualización del resultado con los colores Manchester (rojo/naranja/amarillo/verde/azul)
-- Historial de casos procesados con sus niveles de urgencia
-- Panel de auditoría ética de casos de under-triage
-
----
-
-## Diferencias respecto a la versión anterior
-
-### Arquitectura
-
-| Componente | Versión anterior | Versión actual |
-|---|---|---|
-| Orquestación | Sin orquestador — scripts Python manuales | **Airflow** con DAGs versionados en Python |
-| Almacenamiento de archivos | Carpeta `data/` montada en Docker | **MinIO** (compatible S3) con buckets separados |
-| Pipeline Fase 1 | Endpoint HTTP `POST /fase1/generate-csv` en FastAPI | DAGs en Airflow, sin necesidad de API |
-| Tracking de estados | Sin tracking — solo logs | Tabla `entrevista` en Postgres con timestamps por etapa |
-| Trazabilidad | No había | Cada caso tiene un `guid_entrevista` que recorre todo el pipeline |
-
-### Base de datos
-
-| Tabla | Versión anterior | Versión actual |
-|---|---|---|
-| `casos` | Tabla única con todos los campos | Separada en `entrevista` (tracking) + `casos` (datos) |
-| Tracking de workflow | No existía | `entrevista` con 12 columnas de timestamps (inicio/fin por etapa) |
-| Nombres de columnas | Técnicos (`triage_real`, `entidades_norm`) | Legibles (`nivel_urgencia`, `terminos_clinicos`) |
-
-### Servicios eliminados
-
-| Servicio | Por qué se eliminó |
-|---|---|
-| `mlflow` | Reemplazado por MinIO para almacenar artefactos. No era un requisito del enunciado actualizado |
-| `whisper` | Se añadirá en Fase 3 cuando se integre la subida de audio |
-| `streamlit` | Se añadirá en Fase 3 como frontend visual |
+- Predicción en tiempo real con los colores Manchester
+- Historial de casos procesados
+- Panel de auditoría ética
 
 ---
 
@@ -164,18 +186,18 @@ proyecto_sistema_de_triajes/
 │   │   ├── parser.py           # Lee archivos .info y reconstruye conversaciones
 │   │   ├── prompts.py          # System prompt para Mistral (few-shot + Manchester)
 │   │   ├── llm.py              # Cliente HTTP para la API de Mistral
-│   │   ├── db.py               # Operaciones sobre Postgres
-│   │   └── minio_client.py     # Operaciones sobre MinIO
-│   ├── dag_ingestion.py        # Fase 1 - Paso 1
-│   ├── dag_llm_enrichment.py   # Fase 1 - Paso 2
-│   └── dag_model_training.py   # Fase 1 - Paso 3
+│   │   ├── db.py               # Operaciones sobre Postgres (tabla Entrevista)
+│   │   └── minio_client.py     # Operaciones sobre MinIO (4 buckets)
+│   ├── dag_ingestion.py        # Fase 1 - Paso 1: .info → conversaciones.csv
+│   ├── dag_llm_enrichment.py   # Fase 1 - Paso 2: Mistral → dataset_entrenamiento.csv
+│   └── dag_model_training.py   # Fase 1 - Paso 3: RandomForest + gráficas + modelo.pkl
 ├── services/
 │   ├── api/                    # FastAPI (endpoint predicción Fase 2)
 │   └── airflow/                # Dockerfile de Airflow con dependencias Python
 ├── infra/
 │   └── postgres/
-│       ├── 01_create_databases.sh   # Crea la BD 'airflow' para metadatos
-│       └── 02_schema.sql            # Tablas del proyecto
+│       ├── 01_create_databases.sh   # Crea la BD 'airflow' para metadatos de Airflow
+│       └── 02_schema.sql            # Tabla Entrevista del proyecto
 ├── data/
 │   └── raw/
 │       ├── medical_train.info  # Dataset Fareez — entrenamiento
