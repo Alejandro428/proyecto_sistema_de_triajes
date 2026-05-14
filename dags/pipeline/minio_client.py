@@ -4,12 +4,13 @@ from io import BytesIO
 
 from minio import Minio
 
+BUCKET_AUDIOS       = "audios"
 BUCKET_TEXTOS       = "textos"
 BUCKET_ENRIQUECIDOS = "enriquecidos"
 BUCKET_DATASETS     = "datasets"
 BUCKET_MODELOS      = "modelos"
 
-_BUCKETS = [BUCKET_TEXTOS, BUCKET_ENRIQUECIDOS, BUCKET_DATASETS, BUCKET_MODELOS]
+_BUCKETS = [BUCKET_AUDIOS, BUCKET_TEXTOS, BUCKET_ENRIQUECIDOS, BUCKET_DATASETS, BUCKET_MODELOS]
 
 
 def get_client() -> Minio:

@@ -7,6 +7,8 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
     AIRFLOW__WEBSERVER__SECRET_KEY: triageia_dev_secret
+    AIRFLOW__SCHEDULER__ZOMBIE_DETECTION_INTERVAL: "600"
+    AIRFLOW__SCHEDULER__ZOMBIE_THRESHOLD_SECS: "7200"
     MISTRAL_API_KEY: ${MISTRAL_API_KEY}
     DATABASE_URL: postgresql://${POSTGRES_USER:-triageia}:${POSTGRES_PASSWORD:-triageia}@postgres:5432/${POSTGRES_DB:-triageia}
     MINIO_ENDPOINT: minio:9000
@@ -26,7 +28,7 @@ services:
     image: postgres:16
     container_name: triageia_postgres
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-triageia}
       POSTGRES_USER: ${POSTGRES_USER:-triageia}
@@ -62,12 +64,7 @@ services:
   airflow-init:
     <<: *airflow-common
     container_name: triageia_airflow_init
-    command: >
-      bash -c "airflow db migrate &&
-               airflow users create
-                 --username admin --password admin
-                 --firstname Admin --lastname Admin
-                 --role Admin --email admin@triageia.com || true"
+    command: bash -c "airflow db migrate && airflow users create --username admin --password admin --firstname Admin --lastname Admin --role Admin --email admin@triageia.com || true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -91,6 +88,24 @@ services:
     depends_on:
       airflow-init:
         condition: service_completed_successfully
+    restart: unless-stopped
+
+  frontend:
+    build: ./services/frontend
+    container_name: triageia_frontend
+    ports:
+      - "8501:8501"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-triageia}:${POSTGRES_PASSWORD:-triageia}@postgres:5432/${POSTGRES_DB:-triageia}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - triageia_net
     restart: unless-stopped
 
   api:
