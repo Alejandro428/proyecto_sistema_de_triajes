@@ -21,6 +21,7 @@ from components.minio_helpers import (
     descargar_imagen,
     descargar_json,
     descargar_modelo,
+    get_minio,
     subir_audio,
     subir_json_enriquecido,
     subir_texto,
@@ -167,34 +168,16 @@ def _predecir_ml(entidades: list, score: float) -> str:
 
 def _manchester_card(nivel: str, nivel_llm: str, nivel_ml: str, score: float) -> None:
     cfg = MANCHESTER.get(nivel, MANCHESTER["C3"])
+    cls = f"mcard-{nivel.lower()}" if nivel in MANCHESTER else "mcard-c3"
     discrepancia = nivel_llm and nivel_ml != "N/A" and nivel_llm != nivel_ml
 
     st.markdown(f"""
-    <div style="
-        background:{cfg['bg']};
-        border-left:8px solid {cfg['color']};
-        border-radius:10px;
-        padding:24px 28px;
-        margin:12px 0 20px 0;
-    ">
-        <div style="display:flex;align-items:center;gap:16px;">
-            <div style="
-                background:{cfg['color']};
-                color:white;
-                font-size:2.2em;
-                font-weight:900;
-                border-radius:8px;
-                padding:8px 18px;
-                min-width:80px;
-                text-align:center;
-            ">{nivel}</div>
-            <div>
-                <div style="font-size:1.4em;font-weight:700;color:{cfg['color']}">{cfg['label']}</div>
-                <div style="color:#555;margin-top:2px">{cfg['desc']}</div>
-                <div style="color:#777;font-size:0.92em;margin-top:4px">
-                    ⏱ Tiempo máximo de atención: <strong>{cfg['tiempo']}</strong>
-                </div>
-            </div>
+    <div class="manchester-card {cls}">
+        <div class="m-badge">{nivel}</div>
+        <div>
+            <div class="m-label">{cfg['label']}</div>
+            <div class="m-desc">{cfg['desc']}</div>
+            <div class="m-time">⏱ Tiempo máximo de atención: <strong>{cfg['tiempo']}</strong></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -217,6 +200,19 @@ def _manchester_card(nivel: str, nivel_llm: str, nivel_ml: str, score: float) ->
             st.warning(f"ℹ️ Discrepancia LLM ({nivel_llm}) vs ML ({nivel_ml}). El nivel mostrado es el del LLM.")
 
 
+def _info_card(icon: str, title: str, body: str) -> str:
+    return f"""<div class="info-card">
+        <div class="info-card-title">{icon}&nbsp; {title}</div>
+        <div class="info-card-body">{body}</div>
+    </div>"""
+
+
+def _tag_list(items: list) -> str:
+    if not items:
+        return '<span style="color:var(--c-muted);font-style:italic">Sin datos</span>'
+    return "".join(f'<span class="tag">{e}</span>' for e in items)
+
+
 # ── Layout ───────────────────────────────────────────────────────────────────
 
 st.set_page_config(
@@ -228,25 +224,233 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .main .block-container { padding-top: 1.5rem; max-width: 1100px; }
-    h1 { font-size: 1.8rem !important; }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] {
-        padding: 8px 20px;
-        border-radius: 6px 6px 0 0;
-        font-weight: 600;
-    }
-    div[data-testid="metric-container"] {
-        background: #f8f9fa;
-        border: 1px solid #e9ecef;
-        border-radius: 8px;
-        padding: 12px 16px;
-    }
+/* ── Variables: Light mode ────────────────────────────────── */
+:root {
+    --c-bg:      #ffffff;
+    --c-bg2:     #EBF3FF;
+    --c-card:    #ffffff;
+    --c-blue:    #1565C0;
+    --c-blue-dk: #0D47A1;
+    --c-blue-lt: #BBDEFB;
+    --c-text:    #1A1A2E;
+    --c-muted:   #546E7A;
+    --c-border:  #BBDEFB;
+    --c-shadow:  rgba(21,101,192,0.09);
+}
+/* ── Variables: Dark mode ─────────────────────────────────── */
+[data-theme="dark"] {
+    --c-bg:      #0D1B2A;
+    --c-bg2:     #132334;
+    --c-card:    #1A2E44;
+    --c-blue:    #4FC3F7;
+    --c-blue-dk: #29B6F6;
+    --c-blue-lt: #1E3A5A;
+    --c-text:    #E3F2FD;
+    --c-muted:   #90CAF9;
+    --c-border:  #1E4976;
+    --c-shadow:  rgba(0,0,0,0.35);
+}
+
+/* ── Base ─────────────────────────────────────────────────── */
+.main .block-container { padding-top: 1.2rem; max-width: 1150px; }
+.stApp { background-color: var(--c-bg) !important; }
+
+/* ── Header banner ────────────────────────────────────────── */
+.triage-header {
+    background: linear-gradient(135deg, #1565C0 0%, #0D47A1 55%, #1976D2 100%);
+    border-radius: 12px;
+    padding: 22px 28px;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+}
+.triage-header h1 {
+    color: #fff !important;
+    font-size: 1.9rem !important;
+    font-weight: 800 !important;
+    margin: 0 !important;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.triage-header .sub { color: #BBDEFB; font-size: 0.88rem; margin-top: 4px; }
+
+/* ── Tabs ─────────────────────────────────────────────────── */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 6px;
+    background: var(--c-bg2);
+    border-radius: 10px;
+    padding: 6px;
+}
+.stTabs [data-baseweb="tab"] {
+    padding: 8px 22px;
+    border-radius: 7px;
+    font-weight: 600;
+    font-size: 0.93rem;
+    color: var(--c-blue);
+    background: transparent;
+    border: none;
+}
+.stTabs [aria-selected="true"] {
+    background: var(--c-card) !important;
+    color: var(--c-blue-dk) !important;
+    box-shadow: 0 2px 8px var(--c-shadow);
+}
+
+/* ── Metric cards ─────────────────────────────────────────── */
+div[data-testid="metric-container"] {
+    background: var(--c-card);
+    border: 1px solid var(--c-border);
+    border-top: 4px solid var(--c-blue);
+    border-radius: 10px;
+    padding: 14px 18px;
+    box-shadow: 0 2px 6px var(--c-shadow);
+}
+div[data-testid="metric-container"] label {
+    color: var(--c-blue) !important;
+    font-weight: 600 !important;
+    font-size: 0.82rem !important;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+div[data-testid="metric-container"] [data-testid="stMetricValue"] {
+    color: var(--c-text) !important;
+    font-size: 1.6rem !important;
+    font-weight: 800 !important;
+}
+
+/* ── Section headers ──────────────────────────────────────── */
+h3 {
+    color: var(--c-blue) !important;
+    border-bottom: 2px solid var(--c-bg2);
+    padding-bottom: 6px;
+    margin-bottom: 16px !important;
+}
+h4 { color: var(--c-blue) !important; }
+
+/* ── Buttons ──────────────────────────────────────────────── */
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #1565C0, #0D47A1);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 700;
+    padding: 10px 20px;
+    transition: opacity 0.2s;
+}
+.stButton > button[kind="primary"]:hover { opacity: 0.88; }
+
+/* ── DataFrames ───────────────────────────────────────────── */
+.stDataFrame { border: 1px solid var(--c-border); border-radius: 8px; overflow: hidden; }
+
+/* ── Divider ──────────────────────────────────────────────── */
+hr { border-color: var(--c-border) !important; margin: 18px 0 !important; }
+
+/* ── Info cards (detalles de caso) ───────────────────────── */
+.info-card {
+    background: var(--c-card);
+    border: 1px solid var(--c-border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 14px;
+    box-shadow: 0 2px 8px var(--c-shadow);
+}
+.info-card-title {
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: var(--c-blue);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--c-border);
+    padding-bottom: 6px;
+}
+.info-card-body {
+    color: var(--c-text);
+    font-size: 0.95rem;
+    line-height: 1.6;
+}
+.tag {
+    display: inline-block;
+    background: var(--c-bg2);
+    color: var(--c-blue);
+    border: 1px solid var(--c-border);
+    border-radius: 20px;
+    padding: 3px 12px;
+    margin: 3px 3px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+/* ── Manchester cards (modo claro) ───────────────────────── */
+.manchester-card {
+    border-left: 8px solid;
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 12px 0 20px 0;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+}
+.m-badge {
+    color: white;
+    font-size: 2.2em;
+    font-weight: 900;
+    border-radius: 8px;
+    padding: 8px 18px;
+    min-width: 80px;
+    text-align: center;
+    flex-shrink: 0;
+}
+.m-label { font-size: 1.35em; font-weight: 700; }
+.m-desc  { margin-top: 3px; color: var(--c-muted); }
+.m-time  { color: var(--c-muted); font-size: 0.9em; margin-top: 5px; }
+
+/* Colores por nivel (light) */
+.mcard-c1 { background: #FFEBEE; border-left-color: #B71C1C; }
+.mcard-c1 .m-badge { background: #B71C1C; }
+.mcard-c1 .m-label { color: #B71C1C; }
+.mcard-c2 { background: #FFF3E0; border-left-color: #E65100; }
+.mcard-c2 .m-badge { background: #E65100; }
+.mcard-c2 .m-label { color: #E65100; }
+.mcard-c3 { background: #FFFDE7; border-left-color: #F57F17; }
+.mcard-c3 .m-badge { background: #F57F17; }
+.mcard-c3 .m-label { color: #F57F17; }
+.mcard-c4 { background: #E8F5E9; border-left-color: #1B5E20; }
+.mcard-c4 .m-badge { background: #1B5E20; }
+.mcard-c4 .m-label { color: #1B5E20; }
+.mcard-c5 { background: #E3F2FD; border-left-color: #0D47A1; }
+.mcard-c5 .m-badge { background: #0D47A1; }
+.mcard-c5 .m-label { color: #0D47A1; }
+
+/* Colores por nivel (dark) */
+[data-theme="dark"] .mcard-c1 { background: #2D0000; border-left-color: #EF5350; }
+[data-theme="dark"] .mcard-c1 .m-badge { background: #C62828; }
+[data-theme="dark"] .mcard-c1 .m-label { color: #EF9A9A; }
+[data-theme="dark"] .mcard-c2 { background: #2A1000; border-left-color: #FF6D00; }
+[data-theme="dark"] .mcard-c2 .m-badge { background: #E64A19; }
+[data-theme="dark"] .mcard-c2 .m-label { color: #FFCC80; }
+[data-theme="dark"] .mcard-c3 { background: #1F1A00; border-left-color: #F9A825; }
+[data-theme="dark"] .mcard-c3 .m-badge { background: #F57F17; }
+[data-theme="dark"] .mcard-c3 .m-label { color: #FFE082; }
+[data-theme="dark"] .mcard-c4 { background: #001A05; border-left-color: #2E7D32; }
+[data-theme="dark"] .mcard-c4 .m-badge { background: #2E7D32; }
+[data-theme="dark"] .mcard-c4 .m-label { color: #A5D6A7; }
+[data-theme="dark"] .mcard-c5 { background: #001433; border-left-color: #1565C0; }
+[data-theme="dark"] .mcard-c5 .m-badge { background: #1565C0; }
+[data-theme="dark"] .mcard-c5 .m-label { color: #90CAF9; }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("## 🏥 TriageIA — Sistema de Triaje Manchester")
-st.caption("Protocolo Manchester C1–C5 · Dataset Fareez (272 entrevistas OSCE) · Mistral + RandomForest")
+st.markdown("""
+<div class="triage-header">
+    <div style="font-size:3rem;line-height:1">🏥</div>
+    <div>
+        <h1>TriageIA — Sistema de Triaje Manchester</h1>
+        <div class="sub">Protocolo Manchester C1–C5 &nbsp;·&nbsp; Dataset Fareez (270 entrevistas OSCE)
+        &nbsp;·&nbsp; Mistral + TF-IDF + Logistic Regression</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 tab_triaje, tab_historial, tab_pipeline, tab_modelo = st.tabs([
     "🩺 Nuevo Triaje",
@@ -363,18 +567,23 @@ with tab_triaje:
 
             col_a, col_b = st.columns(2)
             with col_a:
-                st.markdown("#### 📋 Resumen clínico")
-                st.write(datos.get("resumen_es", "—"))
-                st.markdown("#### ⚖️ Justificación clínica")
-                st.info(datos.get("justificacion", "—"))
-
+                st.markdown(
+                    _info_card("📋", "Resumen clínico", datos.get("resumen_es", "—")),
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    _info_card("⚖️", "Justificación clínica", datos.get("justificacion", "—")),
+                    unsafe_allow_html=True,
+                )
             with col_b:
-                st.markdown("#### 🔍 Síntomas detectados")
-                for e in datos.get("entidades_extraidas", []):
-                    st.markdown(f"- {e}")
-                st.markdown("#### 🏥 Términos clínicos normalizados")
-                for e in entidades_norm:
-                    st.markdown(f"- {e}")
+                st.markdown(
+                    _info_card("🔍", "Síntomas detectados", _tag_list(datos.get("entidades_extraidas", []))),
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    _info_card("🏥", "Términos clínicos normalizados", _tag_list(entidades_norm)),
+                    unsafe_allow_html=True,
+                )
 
             st.divider()
             st.markdown("#### ⏱ Tiempos por fase")
@@ -449,17 +658,23 @@ with tab_historial:
 
                 c1, c2 = st.columns(2)
                 with c1:
-                    st.markdown("**Resumen clínico**")
-                    st.write(datos_json.get("resumen", "—"))
-                    st.markdown("**Justificación**")
-                    st.info(datos_json.get("razonamiento", "—"))
+                    st.markdown(
+                        _info_card("📋", "Resumen clínico", datos_json.get("resumen", "—")),
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown(
+                        _info_card("⚖️", "Justificación Manchester", datos_json.get("razonamiento", "—")),
+                        unsafe_allow_html=True,
+                    )
                 with c2:
-                    st.markdown("**Entidades detectadas**")
-                    for e in datos_json.get("entidades", []):
-                        st.markdown(f"- {e}")
-                    st.markdown("**Términos clínicos**")
-                    for e in datos_json.get("entidades_normalizadas", []):
-                        st.markdown(f"- {e}")
+                    st.markdown(
+                        _info_card("🔍", "Síntomas detectados", _tag_list(datos_json.get("entidades", []))),
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown(
+                        _info_card("🏥", "Términos clínicos normalizados", _tag_list(datos_json.get("entidades_normalizadas", []))),
+                        unsafe_allow_html=True,
+                    )
             else:
                 st.warning(f"No hay JSON enriquecido para `{guid_sel}` en MinIO.")
 
@@ -544,7 +759,7 @@ with tab_modelo:
         c2.metric("Precision macro",f"{metricas.get('precision_macro', 0):.2%}")
         c3.metric("Recall macro",   f"{metricas.get('recall_macro',    0):.2%}")
         c4.metric("F1 macro",       f"{metricas.get('f1_macro',        0):.2%}")
-        c5.metric("Casos train",    int(metricas.get("n_casos", 0)))
+        c5.metric("Total dataset",  int(metricas.get("n_casos", 0)))
 
         if metricas.get("train_segundos"):
             st.caption(f"⏱ Tiempo de entrenamiento: {metricas['train_segundos']:.1f}s")
@@ -573,34 +788,27 @@ with tab_modelo:
 
         st.divider()
 
-        # Under-triage en historial
+        # Under-triage en historial — carga desde el CSV (una sola descarga)
         st.markdown("#### ⚠️ Detección de under-triage en el historial")
-        df_hist = get_historial(300)
-        if not df_hist.empty:
-            under_triage = []
-            for _, row in df_hist.iterrows():
-                datos_json = descargar_json(row["guid"])
-                if not datos_json:
-                    continue
-                etiqueta = datos_json.get("etiqueta", "")
-                pred_ml  = datos_json.get("prediccion_entrenada", "") or ""
-                if not etiqueta or not pred_ml or pred_ml == "N/A":
-                    continue
-                niveles = ["C1","C2","C3","C4","C5"]
-                if etiqueta in niveles and pred_ml in niveles:
-                    if niveles.index(pred_ml) > niveles.index(etiqueta):
-                        under_triage.append({
-                            "GUID":          row["guid"],
-                            "LLM (real)":    etiqueta,
-                            "ML (predicho)": pred_ml,
-                            "Diferencia":    niveles.index(pred_ml) - niveles.index(etiqueta),
-                        })
+        try:
+            from io import BytesIO
+            csv_bytes = get_minio().get_object("datasets", "dataset_entrenamiento.csv").read()
+            df_csv    = pd.read_csv(BytesIO(csv_bytes))
+            niveles   = ["C1", "C2", "C3", "C4", "C5"]
+            df_csv    = df_csv[df_csv["etiqueta"].isin(niveles) & df_csv["prediccion_entrenada"].isin(niveles)]
+            df_csv["idx_llm"] = df_csv["etiqueta"].map(niveles.index)
+            df_csv["idx_ml"]  = df_csv["prediccion_entrenada"].map(niveles.index)
+            df_ut = df_csv[df_csv["idx_ml"] > df_csv["idx_llm"]][[
+                "guid", "etiqueta", "prediccion_entrenada"
+            ]].copy()
+            df_ut["Diferencia"] = (df_csv.loc[df_ut.index, "idx_ml"] - df_csv.loc[df_ut.index, "idx_llm"])
+            df_ut = df_ut.rename(columns={"guid": "GUID", "etiqueta": "LLM (real)", "prediccion_entrenada": "ML (predicho)"})
+            df_ut = df_ut.sort_values("Diferencia", ascending=False)
 
-            if under_triage:
-                df_ut = pd.DataFrame(under_triage).sort_values("Diferencia", ascending=False)
+            if not df_ut.empty:
                 st.error(f"Se detectaron {len(df_ut)} casos de posible under-triage:")
-                st.dataframe(df_ut, hide_index=True, use_container_width=True)
+                st.dataframe(df_ut[["GUID","LLM (real)","ML (predicho)","Diferencia"]], hide_index=True, use_container_width=True)
             else:
                 st.success("No se detectaron casos de under-triage en el historial.")
-        else:
-            st.info("Sin historial disponible.")
+        except Exception as e:
+            st.info(f"Dataset no disponible todavía: {e}")
