@@ -773,18 +773,18 @@ with tab_modelo:
             img = descargar_imagen("grafica_distribucion.png")
             if img:
                 st.markdown("#### Distribución de niveles Manchester")
-                st.image(img, use_column_width=True)
+                st.image(img, width=500)
 
         with col_g2:
             img = descargar_imagen("grafica_confusion.png")
             if img:
                 st.markdown("#### Matriz de confusión (test 20%)")
-                st.image(img, use_column_width=True)
+                st.image(img, width=480)
 
         img_imp = descargar_imagen("grafica_importancia.png")
         if img_imp:
             st.markdown("#### Top 15 términos clínicos más relevantes para el modelo")
-            st.image(img_imp, use_column_width=True)
+            st.image(img_imp, use_container_width=True)
 
         st.divider()
 
