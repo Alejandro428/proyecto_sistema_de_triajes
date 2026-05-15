@@ -11,7 +11,10 @@ def _require(name: str) -> str:
 
 
 DATABASE_URL     = _require("DATABASE_URL")
+MISTRAL_API_KEY  = _require("MISTRAL_API_KEY")
 
 MINIO_ENDPOINT   = os.getenv("MINIO_ENDPOINT",   "minio:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY",  "minioadmin")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY",  "minioadmin")
+
+DATA_DIR         = os.getenv("DATA_DIR", "/opt/airflow/data")

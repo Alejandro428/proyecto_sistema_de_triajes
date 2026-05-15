@@ -1,23 +1,91 @@
+import logging
 from datetime import datetime
 
 import psycopg2
 
+logger = logging.getLogger(__name__)
+
 
 class DatabaseService:
     def __init__(self, database_url: str):
-        self.database_url = database_url
+        self._url = database_url
 
     def _connect(self):
-        return psycopg2.connect(self.database_url)
+        return psycopg2.connect(self._url)
+
+    # ------------------------------------------------------------------ #
+    # Entrevista — lectura                                                 #
+    # ------------------------------------------------------------------ #
 
     def existe_entrevista(self, guid: str) -> bool:
-        conn = self._connect()
-        try:
+        sql = "SELECT 1 FROM entrevista WHERE guid_entrevista = %s"
+        with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT 1 FROM entrevista WHERE guid_entrevista = %s", (guid,))
+                cur.execute(sql, (guid,))
                 return cur.fetchone() is not None
-        finally:
-            conn.close()
+
+    def obtener_pendientes_enriquecimiento(self) -> list[dict]:
+        sql = """
+            SELECT guid_entrevista, url_texto_original
+            FROM entrevista
+            WHERE estado = 'INGESTED'
+            ORDER BY guid_entrevista
+        """
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql)
+                cols = [d[0] for d in cur.description]
+                return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+    def obtener_guids_enriquecidos(self) -> list[str]:
+        sql = """
+            SELECT guid_entrevista
+            FROM entrevista
+            WHERE estado IN ('SCORE_CALCULADO', 'MODELO_ENTRENADO')
+            ORDER BY guid_entrevista
+        """
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql)
+                return [row[0] for row in cur.fetchall()]
+
+    def obtener_historial(self, limit: int = 200) -> list[dict]:
+        sql = """
+            SELECT guid_entrevista, estado, motor_workflow,
+                   inicio_solicitud, fin_solicitud,
+                   url_texto_original, url_modelo_entrenado
+            FROM entrevista
+            ORDER BY inicio_solicitud DESC
+            LIMIT %s
+        """
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (limit,))
+                cols = [d[0] for d in cur.description]
+                return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+    def obtener_stats_pipeline(self) -> dict:
+        sql = """
+            SELECT
+                COUNT(*)                                              AS total,
+                COUNT(*) FILTER (WHERE estado = 'MODELO_ENTRENADO')  AS completados,
+                COUNT(*) FILTER (WHERE estado = 'ERROR')             AS errores,
+                AVG(EXTRACT(EPOCH FROM (fin_score - inicio_extraccion_entidades)))
+                    FILTER (WHERE fin_score IS NOT NULL)              AS avg_llm_seg,
+                AVG(EXTRACT(EPOCH FROM (fin_solicitud - inicio_solicitud)))
+                    FILTER (WHERE fin_solicitud IS NOT NULL)          AS avg_e2e_seg
+            FROM entrevista
+        """
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql)
+                cols = [d[0] for d in cur.description]
+                row = cur.fetchone()
+                return dict(zip(cols, row)) if row else {}
+
+    # ------------------------------------------------------------------ #
+    # Entrevista — escritura                                               #
+    # ------------------------------------------------------------------ #
 
     def crear_entrevista(self, guid: str, url_texto: str) -> None:
         now = datetime.now()
@@ -29,57 +97,27 @@ class DatabaseService:
             VALUES (%s, %s, %s, %s, 'Airflow', 'INGESTED')
             ON CONFLICT (guid_entrevista) DO NOTHING
         """
-        conn = self._connect()
         try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (guid, url_texto, now, now))
-            conn.commit()
-        finally:
-            conn.close()
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(sql, (guid, url_texto, now, now))
+                conn.commit()
+            logger.info("Entrevista creada: %s", guid)
+        except Exception:
+            logger.exception("Error creando entrevista %s", guid)
+            raise
 
     def actualizar_entrevista(self, guid: str, **kwargs) -> None:
         if not kwargs:
             return
-        sets = ", ".join(f"{k} = %s" for k in kwargs)
+        sets   = ", ".join(f"{k} = %s" for k in kwargs)
         params = list(kwargs.values()) + [guid]
-        conn = self._connect()
+        sql    = f"UPDATE entrevista SET {sets} WHERE guid_entrevista = %s"
         try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"UPDATE entrevista SET {sets} WHERE guid_entrevista = %s",
-                    params,
-                )
-            conn.commit()
-        finally:
-            conn.close()
-
-    def obtener_pendientes_enriquecimiento(self) -> list[dict]:
-        sql = """
-            SELECT guid_entrevista, url_texto_original
-            FROM entrevista
-            WHERE estado = 'INGESTED'
-            ORDER BY guid_entrevista
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql)
-                cols = [desc[0] for desc in cur.description]
-                return [dict(zip(cols, row)) for row in cur.fetchall()]
-        finally:
-            conn.close()
-
-    def obtener_guids_enriquecidos(self) -> list[str]:
-        sql = """
-            SELECT guid_entrevista
-            FROM entrevista
-            WHERE estado IN ('SCORE_CALCULADO', 'MODELO_ENTRENADO')
-            ORDER BY guid_entrevista
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql)
-                return [row[0] for row in cur.fetchall()]
-        finally:
-            conn.close()
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(sql, params)
+                conn.commit()
+        except Exception:
+            logger.exception("Error actualizando entrevista %s", guid)
+            raise

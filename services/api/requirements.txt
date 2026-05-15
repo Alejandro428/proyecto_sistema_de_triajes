@@ -3,8 +3,8 @@ uvicorn[standard]
 scikit-learn
 pandas
 numpy
-mlflow
 joblib
 httpx
 imbalanced-learn
 psycopg2-binary
+minio
