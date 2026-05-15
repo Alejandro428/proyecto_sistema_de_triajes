@@ -8,8 +8,9 @@ import os
 import re
 import tempfile
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
+from zoneinfo import ZoneInfo
 
 import httpx
 import pandas as pd
@@ -31,6 +32,35 @@ from components.minio_helpers import (
 DATABASE_URL    = os.getenv("DATABASE_URL",    "")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
 MISTRAL_URL     = "https://api.mistral.ai/v1/chat/completions"
+
+_MADRID = ZoneInfo("Europe/Madrid")
+
+
+def _to_madrid(dt) -> str:
+    if dt is None:
+        return "—"
+    try:
+        if pd.isna(dt):
+            return "—"
+    except (TypeError, ValueError):
+        pass
+    if hasattr(dt, "tzinfo") and dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(_MADRID).strftime("%d/%m/%Y %H:%M")
+
+
+def _fmt_dur(secs) -> str:
+    try:
+        s = float(secs)
+        if pd.isna(s):
+            return "—"
+    except (TypeError, ValueError):
+        return "—"
+    if s >= 3600:
+        return f"{int(s // 3600)}h {int((s % 3600) // 60)}m"
+    if s >= 60:
+        return f"{int(s // 60)}m {int(s % 60)}s"
+    return f"{s:.1f}s"
 
 MANCHESTER = {
     "C1": {"color": "#B71C1C", "bg": "#FFEBEE", "badge": "#FFCDD2", "label": "EMERGENCIA",    "tiempo": "0 min",   "desc": "Riesgo vital inmediato"},
@@ -348,37 +378,41 @@ hr { border-color: var(--c-border) !important; margin: 18px 0 !important; }
 /* ── Info cards (detalles de caso) ───────────────────────── */
 .info-card {
     background: var(--c-card);
-    border: 1px solid var(--c-border);
-    border-radius: 10px;
-    padding: 16px 20px;
+    border: 1.5px solid var(--c-border);
+    border-left: 5px solid var(--c-blue);
+    border-radius: 0 10px 10px 0;
+    padding: 16px 20px 16px 18px;
     margin-bottom: 14px;
-    box-shadow: 0 2px 8px var(--c-shadow);
+    box-shadow: 0 3px 10px var(--c-shadow);
 }
 .info-card-title {
-    font-size: 0.76rem;
-    font-weight: 700;
+    font-size: 0.75rem;
+    font-weight: 800;
     color: var(--c-blue);
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.09em;
     margin-bottom: 10px;
-    border-bottom: 1px solid var(--c-border);
-    padding-bottom: 6px;
+    padding-bottom: 7px;
+    border-bottom: 1.5px solid var(--c-border);
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 .info-card-body {
     color: var(--c-text);
-    font-size: 0.95rem;
-    line-height: 1.6;
+    font-size: 0.94rem;
+    line-height: 1.65;
 }
 .tag {
     display: inline-block;
     background: var(--c-bg2);
     color: var(--c-blue);
-    border: 1px solid var(--c-border);
+    border: 1.5px solid var(--c-border);
     border-radius: 20px;
-    padding: 3px 12px;
+    padding: 4px 13px;
     margin: 3px 3px;
-    font-size: 0.85rem;
-    font-weight: 500;
+    font-size: 0.84rem;
+    font-weight: 600;
 }
 
 /* ── Manchester cards (modo claro) ───────────────────────── */
@@ -587,9 +621,11 @@ with tab_triaje:
 
             st.divider()
             st.markdown("#### ⏱ Tiempos por fase")
-            rows = [{"Fase": k, "Tiempo (s)": f"{v:.3f}"} for k, v in tiempos.items()]
-            rows.append({"Fase": "**TOTAL**", "Tiempo (s)": f"{sum(tiempos.values()):.3f}"})
-            st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+            tcols = st.columns(len(tiempos))
+            for i, (fase, t) in enumerate(tiempos.items()):
+                tcols[i].metric(fase, _fmt_dur(t))
+            total = sum(tiempos.values())
+            st.success(f"**Tiempo total del análisis: {_fmt_dur(total)}**")
             st.caption(f"Caso: `{guid}` · Estado: PREDICCION_COMPLETADA")
 
 
@@ -626,13 +662,18 @@ with tab_historial:
         # Añadir emoji de estado
         df_show[""] = df_show["estado"].map(lambda x: ESTADO_COLOR.get(x, "⚪"))
 
+        df_display = df_show[["", "guid", "estado", "inicio_solicitud", "dur_e2e_seg", "dur_llm_seg"]].copy()
+        df_display["inicio_solicitud"] = df_display["inicio_solicitud"].apply(_to_madrid)
+        df_display["dur_e2e_seg"]      = df_display["dur_e2e_seg"].apply(_fmt_dur)
+        df_display["dur_llm_seg"]      = df_display["dur_llm_seg"].apply(_fmt_dur)
+
         st.dataframe(
-            df_show[["", "guid", "estado", "inicio_solicitud", "dur_e2e_seg", "dur_llm_seg"]].rename(columns={
+            df_display.rename(columns={
                 "guid":             "GUID",
                 "estado":           "Estado",
-                "inicio_solicitud": "Fecha ingesta",
-                "dur_e2e_seg":      "E2E (s)",
-                "dur_llm_seg":      "LLM (s)",
+                "inicio_solicitud": "Fecha ingesta (Madrid)",
+                "dur_e2e_seg":      "E2E",
+                "dur_llm_seg":      "LLM",
             }),
             hide_index=True,
             use_container_width=True,
@@ -719,20 +760,33 @@ with tab_pipeline:
                     st.info("Sin datos de timing LLM aún.")
 
         st.divider()
-        st.markdown("#### Tabla de tiempos por etapa")
+        st.markdown("#### Tiempos medios por etapa del pipeline")
         df_timing = get_pipeline_timing()
         if not df_timing.empty:
-            st.dataframe(
-                df_timing.rename(columns={
-                    "guid":      "GUID",
-                    "prep_seg":  "Preprocesamiento (s)",
-                    "llm_seg":   "LLM (s)",
-                    "train_seg": "Entrenamiento (s)",
-                }),
-                hide_index=True,
-                use_container_width=True,
-                height=350,
-            )
+            avg_prep  = df_timing["prep_seg"].dropna().mean()
+            avg_llm   = df_timing["llm_seg"].dropna().mean()
+            avg_train = df_timing["train_seg"].dropna().mean()
+            t1, t2, t3 = st.columns(3)
+            t1.metric("⚙️ Preprocesamiento medio", _fmt_dur(avg_prep))
+            t2.metric("🧠 LLM medio por caso",     _fmt_dur(avg_llm))
+            t3.metric("🏋️ Entrenamiento total",    _fmt_dur(avg_train))
+
+            with st.expander("Ver datos detallados por caso"):
+                df_det = df_timing.copy()
+                df_det["prep_seg"]  = df_det["prep_seg"].apply(_fmt_dur)
+                df_det["llm_seg"]   = df_det["llm_seg"].apply(_fmt_dur)
+                df_det["train_seg"] = df_det["train_seg"].apply(_fmt_dur)
+                st.dataframe(
+                    df_det.rename(columns={
+                        "guid":      "GUID",
+                        "prep_seg":  "Preprocesamiento",
+                        "llm_seg":   "LLM",
+                        "train_seg": "Entrenamiento",
+                    }),
+                    hide_index=True,
+                    use_container_width=True,
+                    height=320,
+                )
         else:
             st.info("Sin datos de timing todavía.")
 
@@ -767,23 +821,23 @@ with tab_modelo:
         st.divider()
 
         # Gráficas desde MinIO
-        col_g1, col_g2 = st.columns(2)
+        img_dist = descargar_imagen("grafica_distribucion.png")
+        img_conf = descargar_imagen("grafica_confusion.png")
+        img_imp  = descargar_imagen("grafica_importancia.png")
 
-        with col_g1:
-            img = descargar_imagen("grafica_distribucion.png")
-            if img:
-                st.markdown("#### Distribución de niveles Manchester")
-                st.image(img, width=500)
+        if img_dist or img_conf:
+            col_d, col_c = st.columns([3, 2])
+            with col_d:
+                if img_dist:
+                    st.markdown("#### Distribución de niveles Manchester")
+                    st.image(img_dist, use_container_width=True)
+            with col_c:
+                if img_conf:
+                    st.markdown("#### Matriz de confusión (test 20%)")
+                    st.image(img_conf, use_container_width=True)
 
-        with col_g2:
-            img = descargar_imagen("grafica_confusion.png")
-            if img:
-                st.markdown("#### Matriz de confusión (test 20%)")
-                st.image(img, width=480)
-
-        img_imp = descargar_imagen("grafica_importancia.png")
         if img_imp:
-            st.markdown("#### Top 15 términos clínicos más relevantes para el modelo")
+            st.markdown("#### Top 15 términos clínicos — coeficientes LR por nivel")
             st.image(img_imp, use_container_width=True)
 
         st.divider()
