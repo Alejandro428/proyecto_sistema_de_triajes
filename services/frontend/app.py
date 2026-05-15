@@ -254,38 +254,10 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-/* ── Variables: Light mode ────────────────────────────────── */
-:root {
-    --c-bg:      #ffffff;
-    --c-bg2:     #EBF3FF;
-    --c-card:    #ffffff;
-    --c-blue:    #1565C0;
-    --c-blue-dk: #0D47A1;
-    --c-blue-lt: #BBDEFB;
-    --c-text:    #1A1A2E;
-    --c-muted:   #546E7A;
-    --c-border:  #BBDEFB;
-    --c-shadow:  rgba(21,101,192,0.09);
-}
-/* ── Variables: Dark mode ─────────────────────────────────── */
-[data-theme="dark"] {
-    --c-bg:      #0D1B2A;
-    --c-bg2:     #132334;
-    --c-card:    #1A2E44;
-    --c-blue:    #4FC3F7;
-    --c-blue-dk: #29B6F6;
-    --c-blue-lt: #1E3A5A;
-    --c-text:    #E3F2FD;
-    --c-muted:   #90CAF9;
-    --c-border:  #1E4976;
-    --c-shadow:  rgba(0,0,0,0.35);
-}
-
-/* ── Base ─────────────────────────────────────────────────── */
+/* ── Base ────────────────────────────────────────────────── */
 .main .block-container { padding-top: 1.2rem; max-width: 1150px; }
-.stApp { background-color: var(--c-bg) !important; }
 
-/* ── Header banner ────────────────────────────────────────── */
+/* ── Header (gradiente azul fijo, funciona en ambos modos) ── */
 .triage-header {
     background: linear-gradient(135deg, #1565C0 0%, #0D47A1 55%, #1976D2 100%);
     border-radius: 12px;
@@ -300,14 +272,14 @@ st.markdown("""
     font-size: 1.9rem !important;
     font-weight: 800 !important;
     margin: 0 !important;
-    text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    text-shadow: 0 1px 4px rgba(0,0,0,0.35);
 }
 .triage-header .sub { color: #BBDEFB; font-size: 0.88rem; margin-top: 4px; }
 
-/* ── Tabs ─────────────────────────────────────────────────── */
+/* ── Tabs ── usa variables nativas de Streamlit ───────────── */
 .stTabs [data-baseweb="tab-list"] {
     gap: 6px;
-    background: var(--c-bg2);
+    background: var(--secondary-background-color);
     border-radius: 10px;
     padding: 6px;
 }
@@ -316,106 +288,105 @@ st.markdown("""
     border-radius: 7px;
     font-weight: 600;
     font-size: 0.93rem;
-    color: var(--c-blue);
+    color: var(--primary-color);
     background: transparent;
     border: none;
 }
 .stTabs [aria-selected="true"] {
-    background: var(--c-card) !important;
-    color: var(--c-blue-dk) !important;
-    box-shadow: 0 2px 8px var(--c-shadow);
+    background: var(--background-color) !important;
+    color: var(--primary-color) !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
 }
 
 /* ── Metric cards ─────────────────────────────────────────── */
 div[data-testid="metric-container"] {
-    background: var(--c-card);
-    border: 1px solid var(--c-border);
-    border-top: 4px solid var(--c-blue);
+    background: var(--background-color);
+    border: 1px solid rgba(128,128,128,0.22);
+    border-top: 4px solid var(--primary-color);
     border-radius: 10px;
     padding: 14px 18px;
-    box-shadow: 0 2px 6px var(--c-shadow);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.07);
 }
 div[data-testid="metric-container"] label {
-    color: var(--c-blue) !important;
-    font-weight: 600 !important;
-    font-size: 0.82rem !important;
+    color: var(--primary-color) !important;
+    font-weight: 700 !important;
+    font-size: 0.80rem !important;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.06em;
 }
 div[data-testid="metric-container"] [data-testid="stMetricValue"] {
-    color: var(--c-text) !important;
-    font-size: 1.6rem !important;
+    color: var(--text-color) !important;
+    font-size: 1.55rem !important;
     font-weight: 800 !important;
 }
 
-/* ── Section headers ──────────────────────────────────────── */
+/* ── Headers ──────────────────────────────────────────────── */
 h3 {
-    color: var(--c-blue) !important;
-    border-bottom: 2px solid var(--c-bg2);
+    color: var(--primary-color) !important;
+    border-bottom: 2px solid var(--secondary-background-color);
     padding-bottom: 6px;
     margin-bottom: 16px !important;
 }
-h4 { color: var(--c-blue) !important; }
+h4 { color: var(--primary-color) !important; }
 
-/* ── Buttons ──────────────────────────────────────────────── */
+/* ── Botón primario ───────────────────────────────────────── */
 .stButton > button[kind="primary"] {
     background: linear-gradient(135deg, #1565C0, #0D47A1);
-    color: white;
+    color: white !important;
     border: none;
     border-radius: 8px;
     font-weight: 700;
     padding: 10px 20px;
     transition: opacity 0.2s;
 }
-.stButton > button[kind="primary"]:hover { opacity: 0.88; }
-
-/* ── DataFrames ───────────────────────────────────────────── */
-.stDataFrame { border: 1px solid var(--c-border); border-radius: 8px; overflow: hidden; }
+.stButton > button[kind="primary"]:hover { opacity: 0.87; }
 
 /* ── Divider ──────────────────────────────────────────────── */
-hr { border-color: var(--c-border) !important; margin: 18px 0 !important; }
+hr { border-color: rgba(128,128,128,0.2) !important; margin: 18px 0 !important; }
 
 /* ── Info cards (detalles de caso) ───────────────────────── */
 .info-card {
-    background: var(--c-card);
-    border: 1.5px solid var(--c-border);
-    border-left: 5px solid var(--c-blue);
+    background: var(--background-color);
+    border: 1.5px solid rgba(128,128,128,0.22);
+    border-left: 5px solid var(--primary-color);
     border-radius: 0 10px 10px 0;
     padding: 16px 20px 16px 18px;
     margin-bottom: 14px;
-    box-shadow: 0 3px 10px var(--c-shadow);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.07);
 }
 .info-card-title {
-    font-size: 0.75rem;
+    font-size: 0.74rem;
     font-weight: 800;
-    color: var(--c-blue);
+    color: var(--primary-color);
     text-transform: uppercase;
     letter-spacing: 0.09em;
     margin-bottom: 10px;
     padding-bottom: 7px;
-    border-bottom: 1.5px solid var(--c-border);
+    border-bottom: 1.5px solid rgba(128,128,128,0.18);
     display: flex;
     align-items: center;
     gap: 6px;
 }
 .info-card-body {
-    color: var(--c-text);
+    color: var(--text-color);
     font-size: 0.94rem;
     line-height: 1.65;
 }
+
+/* ── Tags (síntomas / entidades) ─────────────────────────── */
 .tag {
     display: inline-block;
-    background: var(--c-bg2);
-    color: var(--c-blue);
-    border: 1.5px solid var(--c-border);
+    background: var(--secondary-background-color);
+    color: var(--primary-color);
+    border: 1.5px solid rgba(128,128,128,0.25);
     border-radius: 20px;
     padding: 4px 13px;
-    margin: 3px 3px;
+    margin: 3px;
     font-size: 0.84rem;
     font-weight: 600;
 }
 
-/* ── Manchester cards (modo claro) ───────────────────────── */
+/* ── Manchester cards ─────────────────────────────────────── */
 .manchester-card {
     border-left: 8px solid;
     border-radius: 10px;
@@ -436,42 +407,29 @@ hr { border-color: var(--c-border) !important; margin: 18px 0 !important; }
     flex-shrink: 0;
 }
 .m-label { font-size: 1.35em; font-weight: 700; }
-.m-desc  { margin-top: 3px; color: var(--c-muted); }
-.m-time  { color: var(--c-muted); font-size: 0.9em; margin-top: 5px; }
+.m-desc  { margin-top: 3px; color: var(--text-color); opacity: 0.72; }
+.m-time  { color: var(--text-color); opacity: 0.58; font-size: 0.9em; margin-top: 5px; }
 
-/* Colores por nivel (light) */
-.mcard-c1 { background: #FFEBEE; border-left-color: #B71C1C; }
-.mcard-c1 .m-badge { background: #B71C1C; }
-.mcard-c1 .m-label { color: #B71C1C; }
-.mcard-c2 { background: #FFF3E0; border-left-color: #E65100; }
-.mcard-c2 .m-badge { background: #E65100; }
-.mcard-c2 .m-label { color: #E65100; }
-.mcard-c3 { background: #FFFDE7; border-left-color: #F57F17; }
+/* rgba funciona igual en light y dark — 12% de opacidad */
+.mcard-c1 { background: rgba(183,28,28,0.12);  border-left-color: #E53935; }
+.mcard-c1 .m-badge { background: #C62828; }
+.mcard-c1 .m-label { color: #E53935; }
+
+.mcard-c2 { background: rgba(230,81,0,0.12);   border-left-color: #EF6C00; }
+.mcard-c2 .m-badge { background: #E64A19; }
+.mcard-c2 .m-label { color: #EF6C00; }
+
+.mcard-c3 { background: rgba(245,127,23,0.12); border-left-color: #FB8C00; }
 .mcard-c3 .m-badge { background: #F57F17; }
-.mcard-c3 .m-label { color: #F57F17; }
-.mcard-c4 { background: #E8F5E9; border-left-color: #1B5E20; }
-.mcard-c4 .m-badge { background: #1B5E20; }
-.mcard-c4 .m-label { color: #1B5E20; }
-.mcard-c5 { background: #E3F2FD; border-left-color: #0D47A1; }
-.mcard-c5 .m-badge { background: #0D47A1; }
-.mcard-c5 .m-label { color: #0D47A1; }
+.mcard-c3 .m-label { color: #FB8C00; }
 
-/* Colores por nivel (dark) */
-[data-theme="dark"] .mcard-c1 { background: #2D0000; border-left-color: #EF5350; }
-[data-theme="dark"] .mcard-c1 .m-badge { background: #C62828; }
-[data-theme="dark"] .mcard-c1 .m-label { color: #EF9A9A; }
-[data-theme="dark"] .mcard-c2 { background: #2A1000; border-left-color: #FF6D00; }
-[data-theme="dark"] .mcard-c2 .m-badge { background: #E64A19; }
-[data-theme="dark"] .mcard-c2 .m-label { color: #FFCC80; }
-[data-theme="dark"] .mcard-c3 { background: #1F1A00; border-left-color: #F9A825; }
-[data-theme="dark"] .mcard-c3 .m-badge { background: #F57F17; }
-[data-theme="dark"] .mcard-c3 .m-label { color: #FFE082; }
-[data-theme="dark"] .mcard-c4 { background: #001A05; border-left-color: #2E7D32; }
-[data-theme="dark"] .mcard-c4 .m-badge { background: #2E7D32; }
-[data-theme="dark"] .mcard-c4 .m-label { color: #A5D6A7; }
-[data-theme="dark"] .mcard-c5 { background: #001433; border-left-color: #1565C0; }
-[data-theme="dark"] .mcard-c5 .m-badge { background: #1565C0; }
-[data-theme="dark"] .mcard-c5 .m-label { color: #90CAF9; }
+.mcard-c4 { background: rgba(27,94,32,0.12);   border-left-color: #43A047; }
+.mcard-c4 .m-badge { background: #2E7D32; }
+.mcard-c4 .m-label { color: #43A047; }
+
+.mcard-c5 { background: rgba(21,101,192,0.12); border-left-color: #1E88E5; }
+.mcard-c5 .m-badge { background: #1565C0; }
+.mcard-c5 .m-label { color: #1E88E5; }
 </style>
 """, unsafe_allow_html=True)
 
