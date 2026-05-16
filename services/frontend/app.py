@@ -535,19 +535,14 @@ with tab_triaje:
                 entidades_norm = datos.get("entidades_normalizadas", [])
                 score_ans      = float(datos.get("score_ansiedad", 0.0))
                 _db_update(guid, inicio_entrenamiento=datetime.now())
-                pred_ml = _predecir_ml(entidades_norm, score_ans)
+                pred_ml = str(_predecir_ml(entidades_norm, score_ans))
                 tiempos["Predicción ML"] = time.time() - t0
-                _db_update(
-                    guid,
-                    fin_entrenamiento=datetime.now(),
-                    fin_solicitud=datetime.now(),
-                    estado="PREDICCION_COMPLETADA",
-                )
+                fin_pred = datetime.now()
                 s.update(label=f"✓ Predicción ML completada ({tiempos['Predicción ML']:.3f}s)", state="complete")
 
-            # Guardar JSON enriquecido
+            # Guardar JSON enriquecido primero; actualizar DB a COMPLETADA solo después
             resultado = {
-                "guid": guid, "origen": "Simulación", "texto": transcripcion,
+                "guid": guid, "origen": "Streamlit", "texto": transcripcion,
                 "resumen": datos.get("resumen_es", ""),
                 "entidades": datos.get("entidades_extraidas", []),
                 "entidades_normalizadas": entidades_norm,
@@ -557,6 +552,12 @@ with tab_triaje:
                 "prediccion_entrenada": pred_ml,
             }
             subir_json_enriquecido(guid, resultado)
+            _db_update(
+                guid,
+                fin_entrenamiento=fin_pred,
+                fin_solicitud=datetime.now(),
+                estado="PREDICCION_COMPLETADA",
+            )
 
             # ── Resultado ──────────────────────────────────────────────────
             st.divider()

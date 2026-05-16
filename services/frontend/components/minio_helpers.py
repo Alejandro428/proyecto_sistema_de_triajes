@@ -30,6 +30,7 @@ def descargar_json(guid: str) -> dict | None:
         return None
 
 
+@st.cache_resource(show_spinner=False)
 def descargar_modelo():
     try:
         import joblib
