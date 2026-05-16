@@ -517,7 +517,13 @@ with tab_triaje:
             with st.status("🧠 Analizando con Mistral IA...", expanded=True) as s:
                 t0 = time.time()
                 _db_update(guid, inicio_extraccion_entidades=datetime.now())
-                datos, dur_llm = _llamar_mistral(transcripcion)
+                try:
+                    datos, dur_llm = _llamar_mistral(transcripcion)
+                except Exception as exc:
+                    _db_update(guid, estado="ERROR", fin_solicitud=datetime.now())
+                    s.update(label="✗ Error llamando a Mistral", state="error")
+                    st.error(f"Error de la IA: {exc}")
+                    st.stop()
                 fin_llm        = datetime.now()
                 tiempos["Análisis IA (Mistral)"] = dur_llm
                 _db_update(
@@ -889,5 +895,7 @@ with tab_modelo:
         except Exception as e:
             st.info(
                 "No hay evaluación de Fase 2 todavía. "
-                "Lanza `dag_prediction_phase_2` en Airflow con audios en `data/audios/`."
+                "Sube un audio desde la pestaña '🩺 Nuevo Triaje' y, "
+                "cuando aparezca PREDICCION_COMPLETADA en el historial, "
+                "lanza `dag_evaluation` en Airflow para generar la evaluación."
             )
