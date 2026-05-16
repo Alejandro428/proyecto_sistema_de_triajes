@@ -144,25 +144,35 @@ def _procesar_audios(**context):
     for audio_path in audios:
         guid = _generar_guid(audio_path.name)
 
-        # Reanudación: si la entrevista ya existe y está completa, saltar
-        if db.existe_entrevista(guid):
-            logger.info("⏭  %s ya procesado (audio %s)", guid, audio_path.name)
+        # Reanudación: saltar solo si ya terminó correctamente
+        estado_actual = db.obtener_estado(guid)
+        if estado_actual in ("PREDICCION_COMPLETADA", "EVALUACION_COMPLETADA"):
+            logger.info("⏭  %s ya completado (audio %s)", guid, audio_path.name)
             saltados += 1
             continue
+        if estado_actual == "ERROR":
+            logger.info("↩  %s estaba en ERROR — reintentando (audio %s)", guid, audio_path.name)
 
         try:
-            now = datetime.now()
             ext = audio_path.suffix.lstrip(".").lower()
 
-            # 1. Subir audio a MinIO + crear entrevista
+            # 1. Subir audio a MinIO + crear o resetear entrevista
             audio_bytes = audio_path.read_bytes()
             url_audio   = subir_bytes(
                 BUCKET_AUDIOS, f"{guid}.{ext}", audio_bytes,
                 content_type=f"audio/{ext}",
             )
-            db.crear_entrevista(guid, url_audio,
-                                motor_workflow="Airflow_Fase2",
-                                estado="PROCESANDO")
+            if estado_actual == "ERROR":
+                # Resetear la fila existente para el reintento
+                db.actualizar_entrevista(guid,
+                    url_texto_original=url_audio,
+                    motor_workflow="Airflow_Fase2",
+                    estado="PROCESANDO")
+            else:
+                db.crear_entrevista(guid, url_audio,
+                                    motor_workflow="Airflow_Fase2",
+                                    estado="PROCESANDO")
+            now = datetime.now()  # capturado tras inicio_solicitud para mantener orden cronológico
             db.actualizar_entrevista(guid, inicio_preprocesamiento=now)
 
             # 2. Whisper

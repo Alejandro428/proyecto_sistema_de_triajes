@@ -24,6 +24,14 @@ class DatabaseService:
                 cur.execute(sql, (guid,))
                 return cur.fetchone() is not None
 
+    def obtener_estado(self, guid: str) -> str | None:
+        sql = "SELECT estado FROM entrevista WHERE guid_entrevista = %s"
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (guid,))
+                row = cur.fetchone()
+                return row[0] if row else None
+
     def obtener_pendientes_enriquecimiento(self) -> list[dict]:
         sql = """
             SELECT guid_entrevista, url_texto_original
