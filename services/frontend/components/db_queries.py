@@ -43,7 +43,7 @@ def get_stats() -> dict:
     sql = """
         SELECT
             COUNT(*)                                                         AS total,
-            COUNT(*) FILTER (WHERE estado = 'MODELO_ENTRENADO')             AS completados,
+            COUNT(*) FILTER (WHERE estado IN ('MODELO_ENTRENADO', 'PREDICCION_COMPLETADA', 'EVALUACION_COMPLETADA')) AS completados,
             COUNT(*) FILTER (WHERE estado = 'ERROR')                        AS errores,
             COUNT(*) FILTER (WHERE estado = 'DATASET_GENERADO')             AS en_dataset,
             ROUND(AVG(EXTRACT(EPOCH FROM (fin_score - inicio_extraccion_entidades)))

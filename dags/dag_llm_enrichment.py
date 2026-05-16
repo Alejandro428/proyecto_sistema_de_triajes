@@ -10,7 +10,7 @@ import json
 import logging
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
 from airflow import DAG
@@ -235,6 +235,7 @@ with DAG(
     start_date=datetime(2026, 1, 1),
     schedule=None,
     catchup=False,
+    default_args={"retries": 1, "retry_delay": timedelta(seconds=60)},
     tags=["fase1"],
 ) as dag:
     enriquecer = PythonOperator(

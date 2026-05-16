@@ -71,13 +71,15 @@ MANCHESTER = {
 }
 
 ESTADO_COLOR = {
-    "MODELO_ENTRENADO":      "🟢",
-    "DATASET_GENERADO":      "🟡",
-    "SCORE_CALCULADO":       "🟡",
-    "PROCESANDO":            "🔵",
-    "INGESTED":              "⚪",
-    "PREDICCION_COMPLETADA": "🟢",
-    "ERROR":                 "🔴",
+    "MODELO_ENTRENADO":       "🟢",
+    "PREDICCION_COMPLETADA":  "🟢",
+    "EVALUACION_COMPLETADA":  "🟢",
+    "DATASET_GENERADO":       "🟡",
+    "SCORE_CALCULADO":        "🟡",
+    "PROCESANDO":             "🔵",
+    "PREDICIENDO":            "🔵",
+    "INGESTED":               "⚪",
+    "ERROR":                  "🔴",
 }
 
 SYSTEM_PROMPT = """Eres un médico experto en urgencias hospitalarias especializado en el Protocolo de Triaje Manchester.

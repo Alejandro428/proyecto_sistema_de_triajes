@@ -160,13 +160,10 @@ def _procesar_audios(**context):
                 BUCKET_AUDIOS, f"{guid}.{ext}", audio_bytes,
                 content_type=f"audio/{ext}",
             )
-            db.crear_entrevista(guid, url_audio)
-            db.actualizar_entrevista(
-                guid,
-                motor_workflow="Airflow_Fase2",
-                estado="PROCESANDO",
-                inicio_preprocesamiento=now,
-            )
+            db.crear_entrevista(guid, url_audio,
+                                motor_workflow="Airflow_Fase2",
+                                estado="PROCESANDO")
+            db.actualizar_entrevista(guid, inicio_preprocesamiento=now)
 
             # 2. Whisper
             t_w0 = time.time()

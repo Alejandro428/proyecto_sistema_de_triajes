@@ -87,20 +87,22 @@ class DatabaseService:
     # Entrevista — escritura                                               #
     # ------------------------------------------------------------------ #
 
-    def crear_entrevista(self, guid: str, url_texto: str) -> None:
+    def crear_entrevista(self, guid: str, url_texto: str,
+                         motor_workflow: str = "Airflow",
+                         estado: str = "INGESTED") -> None:
         now = datetime.now()
         sql = """
             INSERT INTO entrevista
                 (guid_entrevista, url_texto_original,
                  inicio_solicitud,
                  motor_workflow, estado)
-            VALUES (%s, %s, %s, 'Airflow', 'INGESTED')
+            VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT (guid_entrevista) DO NOTHING
         """
         try:
             with self._connect() as conn:
                 with conn.cursor() as cur:
-                    cur.execute(sql, (guid, url_texto, now))
+                    cur.execute(sql, (guid, url_texto, now, motor_workflow, estado))
                 conn.commit()
             logger.info("Entrevista creada: %s", guid)
         except Exception:

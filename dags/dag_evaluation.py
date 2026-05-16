@@ -78,7 +78,7 @@ def _evaluar(**context):
             logger.warning("Sin JSON para %s: %s", guid, exc)
 
     df = pd.DataFrame(registros)
-    df = df[df["etiqueta"].isin(_NIVELES) & df["prediccion"].isin(_NIVELES)]
+    df = df[df["etiqueta"].isin(_NIVELES) & df["prediccion"].isin(_NIVELES)].copy()
 
     if df.empty:
         logger.warning("Ningún caso con etiqueta + predicción válidas — abortando evaluación")

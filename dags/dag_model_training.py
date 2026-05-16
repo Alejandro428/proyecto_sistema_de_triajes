@@ -9,7 +9,7 @@ import io
 import json
 import logging
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import joblib
 import matplotlib
@@ -276,6 +276,7 @@ with DAG(
     start_date=datetime(2026, 1, 1),
     schedule=None,
     catchup=False,
+    default_args={"retries": 1, "retry_delay": timedelta(seconds=30)},
     tags=["fase1"],
 ) as dag:
     PythonOperator(
