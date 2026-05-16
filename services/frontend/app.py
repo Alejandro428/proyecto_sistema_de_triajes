@@ -182,6 +182,12 @@ def _llamar_mistral(texto: str) -> tuple[dict, float]:
     return _extraer_json(resp.json()["choices"][0]["message"]["content"]), time.time() - t0
 
 
+@st.cache_resource(show_spinner=False)
+def _cargar_whisper():
+    import whisper
+    return whisper.load_model("base")
+
+
 def _predecir_ml(entidades: list, score: float) -> str:
     artefacto = descargar_modelo()
     if artefacto is None:
@@ -476,7 +482,7 @@ with tab_triaje:
             st.info("El análisis tarda ~15-30 segundos según la duración del audio.")
 
         if analizar:
-            guid        = f"PAC{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            guid        = f"PAC{datetime.now().strftime('%Y%m%d%H%M%S%f')[:18]}"
             ext         = uploaded.name.rsplit(".", 1)[-1].lower()
             audio_bytes = uploaded.getvalue()
             tiempos     = {}
@@ -491,8 +497,7 @@ with tab_triaje:
             with st.status("🎙️ Transcribiendo audio con Whisper...", expanded=True) as s:
                 t0 = time.time()
                 _db_update(guid, inicio_preprocesamiento=datetime.now())
-                import whisper
-                model = whisper.load_model("base")
+                model = _cargar_whisper()
                 with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tmp:
                     tmp.write(audio_bytes)
                     tmp_path = tmp.name

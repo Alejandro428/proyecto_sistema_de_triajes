@@ -40,11 +40,12 @@ logger = logging.getLogger(__name__)
 _NIVELES = ["C1", "C2", "C3", "C4", "C5"]
 
 
-def _guids_fase2() -> list[str]:
+def _guids_a_evaluar() -> list[str]:
+    """Obtiene GUIDs de Fase 2 (Airflow y Streamlit) listos para evaluar."""
     sql = """
         SELECT guid_entrevista
         FROM entrevista
-        WHERE motor_workflow = 'Airflow_Fase2'
+        WHERE motor_workflow IN ('Airflow_Fase2', 'Streamlit')
           AND estado IN ('PREDICCION_COMPLETADA', 'EVALUACION_COMPLETADA')
         ORDER BY guid_entrevista
     """
@@ -56,13 +57,13 @@ def _guids_fase2() -> list[str]:
 
 def _evaluar(**context):
     db    = DatabaseService(DATABASE_URL)
-    guids = _guids_fase2()
+    guids = _guids_a_evaluar()
 
     if not guids:
-        logger.warning("No hay casos de Fase 2 con predicción completada — nada que evaluar")
+        logger.warning("No hay casos de Fase 2/Streamlit con predicción completada — nada que evaluar")
         return
 
-    logger.info("→ Evaluando %d casos de Fase 2", len(guids))
+    logger.info("→ Evaluando %d casos (Airflow_Fase2 + Streamlit)", len(guids))
 
     registros = []
     for guid in guids:
@@ -133,7 +134,7 @@ def _evaluar(**context):
     ConfusionMatrixDisplay(cm, display_labels=labels).plot(
         ax=ax, cmap="Blues", colorbar=False
     )
-    ax.set_title(f"Matriz de confusión — Fase 2 ({len(df)} casos)")
+    ax.set_title(f"Matriz de confusión — Fase 2 + Streamlit ({len(df)} casos)")
     plt.tight_layout()
     buf = io.BytesIO(); fig.savefig(buf, format="png", dpi=100); plt.close(fig)
     subir_bytes(
