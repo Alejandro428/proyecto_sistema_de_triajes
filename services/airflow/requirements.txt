@@ -7,3 +7,4 @@ joblib
 minio
 imbalanced-learn
 matplotlib
+openai-whisper

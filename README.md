@@ -23,29 +23,33 @@ Basado en el corpus de **Fareez et al. (2022)** — 270 entrevistas clínicas si
 ## Arquitectura
 
 ```
-data/raw/ (.info)
-     │
-     ▼
-┌──────────────────┐     ┌──────────────────────┐     ┌─────────────────────────┐
-│  dag_ingestion   │────▶│  dag_llm_enrichment  │────▶│   dag_model_training    │
-│                  │     │                      │     │                         │
-│ Parsea .info     │     │ Llama a Mistral       │     │ TF-IDF + LogReg         │
-│ → conversaciones │     │ → JSON por caso       │     │ → modelo.pkl en MinIO   │
-│   .csv en MinIO  │     │ → dataset_entren.csv  │     │ → prediccion_entrenada  │
-│ → Postgres       │     │ → Postgres            │     │ → 3 gráficas en MinIO   │
-└──────────────────┘     └──────────────────────┘     └─────────────────────────┘
-  (dispara auto →)          (dispara auto →)
-                                                                    │
-                                          ┌─────────────────────────┼──────────────────────┐
-                                          │                         │                      │
-                                 ┌────────▼────────┐    ┌───────────▼──────────┐           │
-                                 │  Streamlit      │    │  FastAPI             │  Fase 2   │
-                                 │  Frontend       │    │  REST API            │  (→ DAGs) │
-                                 │  :8501          │    │  :8000               │           │
-                                 └─────────────────┘    └──────────────────────┘           │
-                                 Audio→Whisper→Mistral→ML  /fase3/predict                  │
-                                                           /metricas/stats         dag_prediction
-                                                                                   dag_evaluation
+                              ┌─── FASE 1 (batch entrenamiento) ───┐
+data/raw/ (.info)             │                                    │
+     │                        ▼                                    │
+┌──────────────────┐  ┌──────────────────────┐  ┌─────────────────────────┐
+│  dag_ingestion   │─▶│  dag_llm_enrichment  │─▶│   dag_model_training    │
+│                  │  │                      │  │                         │
+│ .info → CSV      │  │ Mistral × 270        │  │ TF-IDF + LogReg         │
+│ → MinIO/Postgres │  │ → dataset_entren.csv │  │ → modelo.pkl en MinIO   │
+└──────────────────┘  └──────────────────────┘  └─────────────────────────┘
+
+                              ┌─── FASE 2 (audios nuevos) ─────────┐
+data/audios/ (mp3,wav,…)      │                                    │
+     │                        ▼                                    │
+┌──────────────────────────┐  ┌──────────────────────────┐
+│ dag_prediction_phase_2   │─▶│ dag_evaluation           │
+│                          │  │                          │
+│ Whisper → Mistral → ML   │  │ etiqueta vs prediccion   │
+│ → JSON + entrevista row  │  │ → evaluacion_fase2.json  │
+└──────────────────────────┘  └──────────────────────────┘
+
+                              ┌─── FASE 3 (tiempo real) ───────────┐
+                              │                                    │
+                    ┌─────────▼────────┐    ┌──────────────────────▼───┐
+                    │  Streamlit       │    │  FastAPI                 │
+                    │  :8501           │    │  :8000                   │
+                    │ Audio→Whisper→ML │    │ POST /fase3/predict       │
+                    └──────────────────┘    └──────────────────────────┘
 ```
 
 ### Servicios Docker
@@ -115,10 +119,17 @@ Estado                      -- ver máquina de estados abajo
 ### Máquina de estados
 
 ```
-INGESTED → PROCESANDO → SCORE_CALCULADO → DATASET_GENERADO → MODELO_ENTRENADO
-                                                                      ↑
-                                                          (Fase 3 Streamlit)
-                                                          PREDICIENDO → PREDICCION_COMPLETADA
+Fase 1 (batch entrenamiento, Motor_Workflow='Airflow'):
+  INGESTED → PROCESANDO → SCORE_CALCULADO → DATASET_GENERADO → MODELO_ENTRENADO
+
+Fase 2 (audios nuevos, Motor_Workflow='Airflow_Fase2'):
+  PROCESANDO → PREDICCION_COMPLETADA → EVALUACION_COMPLETADA
+
+Fase 3 (tiempo real, Motor_Workflow='Streamlit' o 'API'):
+  PREDICIENDO → PREDICCION_COMPLETADA
+
+Cualquier fase:
+  ERROR  (con razón en logs de Airflow + columna Estado)
 ```
 
 ---
@@ -210,16 +221,73 @@ La limitación principal es que C1 tiene solo 1 caso en el dataset (Mistral asig
 
 ---
 
-### Fase 2 — Predicción y evaluación ⏳ PENDIENTE
+### Fase 2 — Predicción y evaluación sobre audios nuevos ✅ COMPLETADA
 
-Dos DAGs nuevos que operan sobre casos **no vistos durante el entrenamiento**:
+Dos DAGs nuevos que procesan **audios reales** (no vistos durante el entrenamiento) usando el modelo de Fase 1:
 
 | DAG | Input | Qué hace | Output |
 |---|---|---|---|
-| `dag_prediction` | Nuevos archivos `.info` en `data/predict/` | Parsea → Mistral → carga modelo → predice | Nuevas filas en `entrevista` con `prediccion_entrenada` |
-| `dag_evaluation` | Casos con etiqueta real + predicción | Calcula accuracy/recall/F1, detecta under-triage | Métricas en MinIO |
+| `dag_prediction_phase_2` | Audios en `data/audios/` (mp3/wav/m4a/ogg/webm/flac) | Whisper → Mistral (con retry 429) → modelo ML | JSON en MinIO con `prediccion_prueba` + fila en `entrevista` con `Motor_Workflow='Airflow_Fase2'` |
+| `dag_evaluation` | Casos `PREDICCION_COMPLETADA` de Fase 2 | Compara `etiqueta` (LLM) vs `prediccion_prueba` (ML), detecta under/over-triage | `evaluacion_fase2.json` + `evaluacion_fase2_confusion.png` en MinIO `modelos/` |
 
-Los nuevos casos usarán los mismos campos de la tabla `entrevista`. El `dag_evaluation` compara `etiqueta` (ground truth del LLM) con `prediccion_entrenada` (predicción del modelo ML).
+**Cómo ejecutar Fase 2:**
+```bash
+# 1. Dejar audios en data/audios/ (cualquier formato soportado por Whisper)
+cp mi_paciente_001.mp3 data/audios/
+
+# 2. En Airflow UI lanzar dag_prediction_phase_2
+#    → procesa todos los audios nuevos
+#    → al terminar dispara dag_evaluation automáticamente
+
+# 3. Resultados en MinIO console (http://localhost:9001 → bucket modelos):
+#    - evaluacion_fase2.json    (métricas globales + valoración por caso)
+#    - evaluacion_fase2_confusion.png
+```
+
+**Reanudación**: el GUID se genera de forma determinista a partir del nombre del archivo (`FASE2-<nombre_sanitizado>`), así que re-lanzar el DAG salta los audios ya procesados (vía `existe_entrevista`).
+
+**Valoración por caso** (formato del enunciado):
+
+| Tipo | Cómo se calcula | Score |
+|---|---|---|
+| CORRECTO | `etiqueta == prediccion_prueba` | 1.0 |
+| OVER_TRIAGE | ML predice MÁS urgente que el LLM | 0.5–0.85 (degrada poco) |
+| UNDER_TRIAGE | ML predice MENOS urgente que el LLM (peligroso en clínica) | 0.0–0.75 (degrada fuerte) |
+
+El sesgo de penalización está intencionalmente cargado contra el under-triage porque en triaje real es más grave clasificar un caso emergente como rutinario que al revés.
+
+---
+
+## Gestión de errores
+
+| Punto de fallo | Estrategia |
+|---|---|
+| **LLM Mistral 429 (rate limit)** | Retry con back-off exponencial (15s → 30s → 60s → 120s, 6 intentos) en `dag_llm_enrichment`; 4 intentos en `dag_prediction_phase_2` |
+| **LLM Mistral 5xx u otro error** | Caso marcado `Estado='ERROR'` en Postgres, DAG continúa con el siguiente — se puede re-lanzar y `json_existe` salta los ya procesados |
+| **JSON malformado del LLM** | `_extraer_json()` intenta 3 estrategias: parseo directo, limpieza de markdown, regex de `{…}`. Si todas fallan → ERROR |
+| **Validación de respuesta LLM** | `_validar_datos()` verifica que `triage_real` esté en {C1..C5} y que existan los campos obligatorios |
+| **Whisper devuelve transcripción vacía** | El caso queda en ERROR; el audio no se borra para poder reintentar |
+| **Modelo ML no disponible en MinIO** | El DAG aborta con error claro; el frontend muestra `"N/A"` como predicción y un warning |
+| **Postgres caído** | `crear_entrevista` / `actualizar_entrevista` levantan la excepción → tarea Airflow falla → retry automático (config en `default_args`) |
+| **MinIO caído** | Misma propagación; Airflow reintenta la tarea entera |
+| **Tarea Airflow zombie** | Configurado en docker-compose: `ZOMBIE_THRESHOLD_SECS=7200` (2h) — necesario porque dag_llm_enrichment tarda ~70 min |
+| **Reanudación de pipeline interrumpido** | Cada DAG es idempotente: ingestion verifica con `existe_entrevista`, enrichment con `json_existe` en MinIO, prediction_phase_2 con GUID determinista por filename |
+
+Todos los errores se registran tanto en los logs de Airflow (por tarea) como en la columna `Estado='ERROR'` de la tabla `entrevista`, lo que permite filtrarlos desde el frontend.
+
+---
+
+## Por qué Airflow y no n8n
+
+El enunciado permite elegir entre n8n, Airflow o ambos. Elegimos **solo Airflow** por las siguientes razones:
+
+- **Procesamiento batch pesado**: el enriquecimiento LLM tarda ~70 min sobre 270 casos. Airflow gestiona reintentos por tarea, persistencia de estado y trazabilidad de runs largos mejor que un flujo visual n8n.
+- **DAGs versionados en código**: los workflows viven en `dags/*.py`, revisables en git y testables como código Python normal. n8n los expresa en JSON exportado de la UI, peor para diffs y code review.
+- **Dependencias entre DAGs**: `dag_ingestion → dag_llm_enrichment → dag_model_training` se encadenan con `TriggerDagRunOperator`. Lo mismo `dag_prediction_phase_2 → dag_evaluation`.
+- **Reanudación**: si un DAG cae a mitad, se puede re-lanzar y cada tarea verifica el estado en Postgres/MinIO antes de reprocesar. n8n requiere lógica manual para esto.
+- **Casos de tiempo real ya cubiertos** sin n8n: la API FastAPI (`POST /fase3/predict`) y el frontend Streamlit (Tab "Nuevo Triaje") atienden las peticiones síncronas que serían el caso de uso natural de un webhook n8n.
+
+n8n hubiera sido la opción correcta si necesitásemos integrar muchas APIs externas (Slack, Telegram, email) o exponer un webhook configurable por no-developers. Para este sistema, todos los consumidores están dentro de docker-compose y son código.
 
 ---
 
@@ -265,7 +333,9 @@ proyecto_sistema_de_triajes/
 │   │   └── minio_client.py     # Operaciones sobre MinIO
 │   ├── dag_ingestion.py        # Fase 1 - Paso 1
 │   ├── dag_llm_enrichment.py   # Fase 1 - Paso 2
-│   └── dag_model_training.py   # Fase 1 - Paso 3 (TF-IDF + LogReg)
+│   ├── dag_model_training.py   # Fase 1 - Paso 3 (TF-IDF + LogReg)
+│   ├── dag_prediction_phase_2.py  # Fase 2 - Predicción sobre audios
+│   └── dag_evaluation.py       # Fase 2 - Valoración del modelo
 ├── services/
 │   ├── airflow/                # Dockerfile de Airflow con dependencias Python
 │   ├── api/                    # FastAPI — predicción y métricas
@@ -287,9 +357,10 @@ proyecto_sistema_de_triajes/
 │       ├── 01_create_databases.sh
 │       └── 02_schema.sql
 ├── data/
-│   └── raw/
-│       ├── medical_train.info
-│       └── medical_test.info
+│   ├── raw/                    # Fase 1 — .info para entrenamiento
+│   │   ├── medical_train.info
+│   │   └── medical_test.info
+│   └── audios/                 # Fase 2 — audios nuevos (mp3, wav, m4a, …)
 ├── docker-compose.yml
 └── .env
 ```

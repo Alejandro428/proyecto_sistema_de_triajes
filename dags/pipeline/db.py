@@ -92,15 +92,15 @@ class DatabaseService:
         sql = """
             INSERT INTO entrevista
                 (guid_entrevista, url_texto_original,
-                 inicio_solicitud, fin_solicitud,
+                 inicio_solicitud,
                  motor_workflow, estado)
-            VALUES (%s, %s, %s, %s, 'Airflow', 'INGESTED')
+            VALUES (%s, %s, %s, 'Airflow', 'INGESTED')
             ON CONFLICT (guid_entrevista) DO NOTHING
         """
         try:
             with self._connect() as conn:
                 with conn.cursor() as cur:
-                    cur.execute(sql, (guid, url_texto, now, now))
+                    cur.execute(sql, (guid, url_texto, now))
                 conn.commit()
             logger.info("Entrevista creada: %s", guid)
         except Exception:

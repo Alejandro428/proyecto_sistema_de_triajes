@@ -9,7 +9,10 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from config import DATABASE_URL, MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
+from config import (
+    DATABASE_URL, MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY,
+    MISTRAL_API_KEY,
+)
 from services.db import DatabaseService
 from services.minio_service import MinIOService
 
@@ -84,7 +87,7 @@ def _extraer_json(texto: str) -> dict:
 
 class PredictRequest(BaseModel):
     texto:         str
-    mistral_key:   str
+    mistral_key:   str | None = None   # opcional — usa MISTRAL_API_KEY del entorno si no se pasa
     system_prompt: str | None = None
 
 
@@ -107,18 +110,28 @@ class PredictResponse(BaseModel):
 @router.post("/predict", response_model=PredictResponse)
 def predict(req: PredictRequest):
     system_prompt = req.system_prompt or DEFAULT_SYSTEM_PROMPT
+    mistral_key   = req.mistral_key or MISTRAL_API_KEY
+    if not mistral_key:
+        raise HTTPException(
+            status_code=400,
+            detail="Falta MISTRAL_API_KEY (ni en el request ni en la variable de entorno)",
+        )
+
     guid = f"API{datetime.now().strftime('%Y%m%d%H%M%S%f')[:18]}"
 
     db    = _get_db()
     minio = _get_minio()
 
-    db.crear_prediccion(guid, f"minio://textos/{guid}.txt")
+    # Guardar texto original en MinIO
+    url_texto = minio.subir_texto(guid, req.texto)
+    db.crear_prediccion(guid, url_texto)
+    db.actualizar_prediccion(guid, inicio_extraccion_entidades=datetime.now())
 
     # Llamada LLM
     try:
         resp = httpx.post(
             MISTRAL_API_URL,
-            headers={"Authorization": f"Bearer {req.mistral_key}", "Content-Type": "application/json"},
+            headers={"Authorization": f"Bearer {mistral_key}", "Content-Type": "application/json"},
             json={
                 "model":       "mistral-large-latest",
                 "temperature": 0.1,
@@ -135,6 +148,15 @@ def predict(req: PredictRequest):
         db.actualizar_prediccion(guid, estado="ERROR")
         raise HTTPException(status_code=502, detail=f"Error LLM: {exc}")
 
+    fin_llm = datetime.now()
+    db.actualizar_prediccion(
+        guid,
+        fin_extraccion_entidades=fin_llm,
+        inicio_normalizacion=fin_llm, fin_normalizacion=fin_llm,
+        inicio_etiquetado=fin_llm, fin_etiquetado=fin_llm,
+        inicio_score=fin_llm, fin_score=fin_llm,
+    )
+
     # Predicción ML
     artefacto = _cargar_modelo()
     pred_ml   = "N/A"
@@ -145,15 +167,32 @@ def predict(req: PredictRequest):
             clf            = artefacto["modelo"]
             entidades_norm = datos.get("entidades_normalizadas", [])
             score          = float(datos.get("score_ansiedad", 0.0))
-            texto          = " ".join(entidades_norm)
-            X_vec          = vec.transform([texto]).toarray()
+            texto_ents     = " ".join(entidades_norm)
+            X_vec          = vec.transform([texto_ents]).toarray()
             X              = np.hstack([X_vec, [[score]]])
-            pred_ml        = clf.predict(X)[0]
+            pred_ml        = str(clf.predict(X)[0])
         except Exception:
             pass
 
-    etiqueta_llm = datos.get("triage_real", "")
-    score_ans    = float(datos.get("score_ansiedad", 0.0))
+    etiqueta_llm   = datos.get("triage_real", "")
+    score_ans      = float(datos.get("score_ansiedad", 0.0))
+    entidades_norm = datos.get("entidades_normalizadas", [])
+
+    # Persistir JSON enriquecido en MinIO (igual que dag_llm_enrichment y Streamlit)
+    enriquecido = {
+        "guid":                   guid,
+        "origen":                 "API",
+        "categoria":              "API",
+        "texto":                  req.texto,
+        "resumen":                datos.get("resumen_es", ""),
+        "entidades":              datos.get("entidades_extraidas", []),
+        "entidades_normalizadas": entidades_norm,
+        "etiqueta":               etiqueta_llm,
+        "razonamiento":           datos.get("justificacion", ""),
+        "score_ansiedad":         score_ans,
+        "prediccion_entrenada":   pred_ml,
+    }
+    minio.subir_json(guid, enriquecido)
 
     db.actualizar_prediccion(
         guid,
@@ -169,7 +208,7 @@ def predict(req: PredictRequest):
         resumen=datos.get("resumen_es", ""),
         justificacion=datos.get("justificacion", ""),
         entidades=datos.get("entidades_extraidas", []),
-        entidades_normalizadas=datos.get("entidades_normalizadas", []),
+        entidades_normalizadas=entidades_norm,
         discrepancia=(etiqueta_llm != pred_ml and pred_ml != "N/A"),
     )
 
