@@ -824,3 +824,62 @@ with tab_modelo:
                 st.success("No se detectaron casos de under-triage en el historial.")
         except Exception as e:
             st.info(f"Dataset no disponible todavía: {e}")
+
+        st.divider()
+
+        # ── Evaluación Fase 2 ─────────────────────────────────────────────────
+        st.markdown("#### 🎯 Evaluación Fase 2 — predicción sobre audios nuevos")
+        try:
+            from io import BytesIO
+            raw = get_minio().get_object("modelos", "evaluacion_fase2.json").read()
+            evaluacion = json.loads(raw)
+
+            mg = evaluacion.get("metricas_globales", {})
+            tc = evaluacion.get("triaje_clinico", {})
+
+            f1c, f2c, f3c, f4c = st.columns(4)
+            f1c.metric("Accuracy",         f"{mg.get('accuracy', 0):.2%}")
+            f2c.metric("Recall macro",     f"{mg.get('recall_macro', 0):.2%}")
+            f3c.metric("F1 macro",         f"{mg.get('f1_macro', 0):.2%}")
+            f4c.metric("Casos evaluados",  int(evaluacion.get("n_casos_validos", 0)))
+
+            t1c, t2c, t3c = st.columns(3)
+            t1c.metric("✅ Correctos",     int(tc.get("correctos", 0)))
+            t2c.metric("⚠️ Over-triage",   int(tc.get("over_triage", 0)))
+            t3c.metric("🚨 Under-triage",  int(tc.get("under_triage", 0)))
+
+            # Matriz de confusión
+            img_eval = descargar_imagen("evaluacion_fase2_confusion.png")
+            if img_eval:
+                _, c_center, _ = st.columns([1, 3, 1])
+                with c_center:
+                    st.image(img_eval, caption="Matriz de confusión Fase 2", use_container_width=True)
+
+            # Detalle por caso
+            por_caso = evaluacion.get("por_caso", [])
+            if por_caso:
+                with st.expander(f"Ver detalle por caso ({len(por_caso)} casos)"):
+                    df_eval = pd.DataFrame(por_caso)
+                    st.dataframe(
+                        df_eval.rename(columns={
+                            "guid":          "GUID",
+                            "etiqueta":      "Etiqueta LLM",
+                            "prediccion":    "Predicción ML",
+                            "valoracion":    "Valoración",
+                            "score":         "Score",
+                            "error_niveles": "Δ niveles",
+                        }),
+                        hide_index=True,
+                        use_container_width=True,
+                        height=320,
+                    )
+
+            fecha = evaluacion.get("fecha_evaluacion", "")
+            if fecha:
+                st.caption(f"Última evaluación: {fecha}")
+
+        except Exception as e:
+            st.info(
+                "No hay evaluación de Fase 2 todavía. "
+                "Lanza `dag_prediction_phase_2` en Airflow con audios en `data/audios/`."
+            )

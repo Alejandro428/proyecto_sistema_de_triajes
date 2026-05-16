@@ -7,7 +7,7 @@ para todos los casos de Fase 2. Calcula la valoración global y por caso.
 import io
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import matplotlib
 matplotlib.use("Agg")
@@ -189,7 +189,7 @@ with DAG(
     start_date=datetime(2026, 1, 1),
     schedule=None,
     catchup=False,
-    default_args={"retries": 1, "retry_delay": 30},
+    default_args={"retries": 1, "retry_delay": timedelta(seconds=30)},
     tags=["fase2"],
 ) as dag:
 

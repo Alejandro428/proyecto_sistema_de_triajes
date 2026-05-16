@@ -9,7 +9,7 @@ import json
 import logging
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import joblib
@@ -128,7 +128,13 @@ def _procesar_audios(**context):
     modelo_whisper = whisper.load_model("base")
 
     logger.info("Descargando modelo ML desde MinIO...")
-    modelo_bytes     = descargar_bytes(BUCKET_MODELOS, "modelo_triageia.pkl")
+    try:
+        modelo_bytes = descargar_bytes(BUCKET_MODELOS, "modelo_triageia.pkl")
+    except Exception as exc:
+        raise RuntimeError(
+            "No se encontró modelo_triageia.pkl en MinIO. "
+            "Ejecuta primero Fase 1 (dag_ingestion → dag_llm_enrichment → dag_model_training)."
+        ) from exc
     artefacto_modelo = joblib.load(io.BytesIO(modelo_bytes))
 
     procesados = 0
@@ -259,7 +265,7 @@ with DAG(
     start_date=datetime(2026, 1, 1),
     schedule=None,
     catchup=False,
-    default_args={"retries": 1, "retry_delay": 60},
+    default_args={"retries": 1, "retry_delay": timedelta(seconds=60)},
     tags=["fase2"],
 ) as dag:
 
