@@ -567,7 +567,12 @@ with tab_triaje:
                 "score_ansiedad": score_ans,
                 "prediccion_entrenada": pred_ml,
             }
-            subir_json_enriquecido(guid, resultado)
+            try:
+                subir_json_enriquecido(guid, resultado)
+            except Exception as exc:
+                _db_update(guid, estado="ERROR", fin_solicitud=datetime.now())
+                st.error(f"Error guardando resultados en MinIO: {exc}")
+                st.stop()
             _db_update(
                 guid,
                 fin_entrenamiento=fin_pred,
