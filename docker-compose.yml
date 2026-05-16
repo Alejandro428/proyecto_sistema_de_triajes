@@ -7,6 +7,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
     AIRFLOW__WEBSERVER__SECRET_KEY: triageia_dev_secret
+    AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
     AIRFLOW__SCHEDULER__ZOMBIE_DETECTION_INTERVAL: "600"
     AIRFLOW__SCHEDULER__ZOMBIE_THRESHOLD_SECS: "7200"
     MISTRAL_API_KEY: ${MISTRAL_API_KEY}
