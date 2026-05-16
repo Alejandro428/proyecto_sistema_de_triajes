@@ -503,8 +503,18 @@ with tab_triaje:
                     tmp_path = tmp.name
                 try:
                     transcripcion = model.transcribe(tmp_path)["text"].strip()
+                except Exception as exc:
+                    _db_update(guid, estado="ERROR", fin_solicitud=datetime.now())
+                    s.update(label="✗ Error en transcripción Whisper", state="error")
+                    st.error(f"Error transcribiendo el audio: {exc}")
+                    st.stop()
                 finally:
                     os.unlink(tmp_path)
+                if not transcripcion:
+                    _db_update(guid, estado="ERROR", fin_solicitud=datetime.now())
+                    s.update(label="✗ Audio sin contenido de voz", state="error")
+                    st.error("Whisper no detectó voz en el audio. Comprueba que el archivo contiene habla.")
+                    st.stop()
                 subir_texto(guid, transcripcion)
                 tiempos["Transcripción (Whisper)"] = time.time() - t0
                 _db_update(guid, fin_preprocesamiento=datetime.now())
