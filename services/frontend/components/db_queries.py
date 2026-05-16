@@ -65,6 +65,26 @@ def get_stats() -> dict:
         return {}
 
 
+@st.cache_data(ttl=30)
+def get_motor_stats() -> pd.DataFrame:
+    sql = """
+        SELECT
+            COALESCE(motor_workflow, 'Desconocido') AS fuente,
+            COUNT(*)                                                            AS total,
+            COUNT(*) FILTER (WHERE estado IN (
+                'MODELO_ENTRENADO','PREDICCION_COMPLETADA','EVALUACION_COMPLETADA')) AS completados,
+            COUNT(*) FILTER (WHERE estado = 'ERROR')                           AS errores
+        FROM entrevista
+        GROUP BY motor_workflow
+        ORDER BY motor_workflow
+    """
+    try:
+        with _conn() as conn:
+            return pd.read_sql(sql, conn)
+    except Exception:
+        return pd.DataFrame()
+
+
 @st.cache_data(ttl=60)
 def get_pipeline_timing() -> pd.DataFrame:
     """Tiempos por etapa de cada entrevista completada."""

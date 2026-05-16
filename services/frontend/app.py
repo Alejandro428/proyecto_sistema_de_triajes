@@ -17,7 +17,7 @@ import pandas as pd
 import psycopg2
 import streamlit as st
 
-from components.db_queries import get_historial, get_stats, get_pipeline_timing
+from components.db_queries import get_historial, get_stats, get_pipeline_timing, get_motor_stats
 from components.minio_helpers import (
     descargar_imagen,
     descargar_json,
@@ -32,6 +32,7 @@ from components.minio_helpers import (
 DATABASE_URL    = os.getenv("DATABASE_URL",    "")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
 MISTRAL_URL     = "https://api.mistral.ai/v1/chat/completions"
+AIRFLOW_URL     = os.getenv("AIRFLOW_URL",     "http://airflow-webserver:8080")
 
 _MADRID = ZoneInfo("Europe/Madrid")
 
@@ -236,6 +237,24 @@ def _manchester_card(nivel: str, nivel_llm: str, nivel_ml: str, score: float) ->
             )
         else:
             st.warning(f"ℹ️ Discrepancia LLM ({nivel_llm}) vs ML ({nivel_ml}). El nivel mostrado es el del LLM.")
+
+
+def _trigger_dag_evaluation() -> tuple[bool, str]:
+    try:
+        import time as _time
+        run_id = f"frontend_{int(_time.time())}"
+        resp = httpx.post(
+            f"{AIRFLOW_URL}/api/v1/dags/dag_evaluation/dagRuns",
+            auth=("admin", "admin"),
+            json={"dag_run_id": run_id, "conf": {}},
+            timeout=10.0,
+        )
+        if resp.status_code == 409:
+            return True, "El DAG ya está en ejecución. Espera unos segundos y recarga la página."
+        resp.raise_for_status()
+        return True, "dag_evaluation lanzado correctamente. Tarda ~15-30 segundos. Recarga Tab 4 para ver los resultados."
+    except Exception as exc:
+        return False, str(exc)
 
 
 def _info_card(icon: str, title: str, body: str) -> str:
@@ -586,6 +605,40 @@ with tab_triaje:
             nivel_fin = nivel_llm if nivel_llm in MANCHESTER else pred_ml
             _manchester_card(nivel_fin, nivel_llm, pred_ml, score_ans)
 
+            # Valoración automática LLM vs ML
+            _NIVELES_ORD = ["C1", "C2", "C3", "C4", "C5"]
+            if nivel_llm in _NIVELES_ORD and pred_ml in _NIVELES_ORD:
+                _err = _NIVELES_ORD.index(pred_ml) - _NIVELES_ORD.index(nivel_llm)
+                if _err == 0:
+                    _val_score = 1.0
+                    st.success(
+                        f"✅ **CORRECTO** — La predicción ML coincide con el diagnóstico LLM (**{nivel_llm}**). "
+                        f"Score de valoración: **{_val_score:.2f}**"
+                    )
+                elif _err > 0:
+                    _val_score = max(0.0, 1.0 - 0.25 * _err)
+                    st.error(
+                        f"🚨 **UNDER-TRIAGE** — LLM: **{nivel_llm}** · ML: **{pred_ml}** "
+                        f"({_err} nivel{'es' if _err > 1 else ''} menos urgente que el LLM). "
+                        f"Requiere revisión manual. Score: **{_val_score:.2f}**"
+                    )
+                else:
+                    _val_score = max(0.5, 1.0 - 0.15 * abs(_err))
+                    st.warning(
+                        f"⚠️ **OVER-TRIAGE** — LLM: **{nivel_llm}** · ML: **{pred_ml}** "
+                        f"({abs(_err)} nivel{'es' if abs(_err) > 1 else ''} más urgente que el LLM). "
+                        f"Score: **{_val_score:.2f}**"
+                    )
+
+                mv1, mv2, mv3, mv4 = st.columns(4)
+                mv1.metric("Diagnóstico LLM",  nivel_llm)
+                mv2.metric("Predicción ML",    pred_ml)
+                mv3.metric("Δ niveles",        f"{_err:+d}")
+                mv4.metric("Score valoración", f"{_val_score:.2f}")
+            elif pred_ml == "N/A":
+                st.info("Modelo ML no disponible — sin valoración automática.")
+
+            st.divider()
             col_a, col_b = st.columns(2)
             with col_a:
                 st.markdown(
@@ -649,7 +702,7 @@ with tab_historial:
         # Añadir emoji de estado
         df_show[""] = df_show["estado"].map(lambda x: ESTADO_COLOR.get(x, "⚪"))
 
-        df_display = df_show[["", "guid", "estado", "inicio_solicitud", "dur_e2e_seg", "dur_llm_seg"]].copy()
+        df_display = df_show[["", "guid", "estado", "origen_motor", "inicio_solicitud", "dur_e2e_seg", "dur_llm_seg"]].copy()
         df_display["inicio_solicitud"] = df_display["inicio_solicitud"].apply(_to_madrid)
         df_display["dur_e2e_seg"]      = df_display["dur_e2e_seg"].apply(_fmt_dur)
         df_display["dur_llm_seg"]      = df_display["dur_llm_seg"].apply(_fmt_dur)
@@ -658,6 +711,7 @@ with tab_historial:
             df_display.rename(columns={
                 "guid":             "GUID",
                 "estado":           "Estado",
+                "origen_motor":     "Fuente",
                 "inicio_solicitud": "Fecha ingesta (Madrid)",
                 "dur_e2e_seg":      "E2E",
                 "dur_llm_seg":      "LLM",
@@ -718,12 +772,20 @@ with tab_pipeline:
         st.info("No hay datos de métricas todavía. Lanza dag_ingestion para comenzar.")
     else:
         # KPIs
-        c1, c2, c3, c4, c5 = st.columns(5)
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
         c1.metric("Total entrevistas",    int(stats.get("total", 0) or 0))
         c2.metric("Completadas",          int(stats.get("completados", 0) or 0))
         c3.metric("Errores",              int(stats.get("errores", 0) or 0))
         c4.metric("Tiempo medio LLM",     f"{stats.get('avg_llm_seg') or 0:.1f}s")
         c5.metric("Latencia media E2E",   f"{stats.get('avg_e2e_seg') or 0:.1f}s")
+        _primera = stats.get("primera_ingesta")
+        _ultima  = stats.get("ultima_solicitud")
+        if _primera and _ultima:
+            _dur_min = (_ultima - _primera).total_seconds() / 60
+            _throughput = f"{int(stats.get('total', 0)) / _dur_min:.2f} casos/min" if _dur_min > 0 else "—"
+        else:
+            _throughput = "—"
+        c6.metric("Throughput",           _throughput)
 
         st.divider()
 
@@ -777,6 +839,23 @@ with tab_pipeline:
         else:
             st.info("Sin datos de timing todavía.")
 
+        st.divider()
+        st.markdown("#### Desglose por motor de procesamiento")
+        df_motor = get_motor_stats()
+        if not df_motor.empty:
+            st.dataframe(
+                df_motor.rename(columns={
+                    "fuente":      "Fuente",
+                    "total":       "Total",
+                    "completados": "Completados",
+                    "errores":     "Errores",
+                }),
+                hide_index=True,
+                use_container_width=True,
+            )
+        else:
+            st.info("Sin datos de motor todavía.")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — Métricas del Modelo
@@ -829,8 +908,76 @@ with tab_modelo:
 
         st.divider()
 
+        # ── Evaluación Fase 2 ─────────────────────────────────────────────────
+        st.markdown("#### 🎯 Evaluación Fase 2 — predicción sobre audios nuevos")
+
+        col_btn_eval, col_msg_eval = st.columns([2, 5])
+        with col_btn_eval:
+            if st.button("🚀 Ejecutar dag_evaluation", type="primary", use_container_width=True):
+                ok, msg = _trigger_dag_evaluation()
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(f"Error lanzando DAG: {msg}")
+        with col_msg_eval:
+            st.info("Lanza la evaluación para comparar las predicciones de Fase 2 con las etiquetas LLM. Tarda ~15–30 s.")
+
+        try:
+            from io import BytesIO as _BytesIO
+            raw = get_minio().get_object("modelos", "evaluacion_fase2.json").read()
+            evaluacion = json.loads(raw)
+
+            mg = evaluacion.get("metricas_globales", {})
+            tc = evaluacion.get("triaje_clinico", {})
+
+            f1c, f2c, f3c, f4c = st.columns(4)
+            f1c.metric("Accuracy",         f"{mg.get('accuracy', 0):.2%}")
+            f2c.metric("Recall macro",     f"{mg.get('recall_macro', 0):.2%}")
+            f3c.metric("F1 macro",         f"{mg.get('f1_macro', 0):.2%}")
+            f4c.metric("Casos evaluados",  int(evaluacion.get("n_casos_validos", 0)))
+
+            t1c, t2c, t3c = st.columns(3)
+            t1c.metric("✅ Correctos",     int(tc.get("correctos", 0)))
+            t2c.metric("⚠️ Over-triage",   int(tc.get("over_triage", 0)))
+            t3c.metric("🚨 Under-triage",  int(tc.get("under_triage", 0)))
+
+            img_eval = descargar_imagen("evaluacion_fase2_confusion.png")
+            if img_eval:
+                _, c_center, _ = st.columns([1, 3, 1])
+                with c_center:
+                    st.image(img_eval, caption="Matriz de confusión Fase 2", use_container_width=True)
+
+            por_caso = evaluacion.get("por_caso", [])
+            if por_caso:
+                _VAL_EMOJI = {"CORRECTO": "✅", "OVER_TRIAGE": "⚠️", "UNDER_TRIAGE": "🚨"}
+                with st.expander(f"Ver detalle por caso ({len(por_caso)} casos)"):
+                    df_eval = pd.DataFrame(por_caso)
+                    df_eval.insert(0, "", df_eval["valoracion"].map(lambda x: _VAL_EMOJI.get(x, "❓")))
+                    st.dataframe(
+                        df_eval.rename(columns={
+                            "guid":          "GUID",
+                            "etiqueta":      "Etiqueta LLM",
+                            "prediccion":    "Predicción ML",
+                            "valoracion":    "Valoración",
+                            "score":         "Score",
+                            "error_niveles": "Δ niveles",
+                        }),
+                        hide_index=True,
+                        use_container_width=True,
+                        height=320,
+                    )
+
+            fecha = evaluacion.get("fecha_evaluacion", "")
+            if fecha:
+                st.caption(f"Última evaluación: {fecha}")
+
+        except Exception:
+            st.caption("Aún no hay resultados de evaluación. Pulsa el botón para lanzar el DAG.")
+
+        st.divider()
+
         # Under-triage en historial — carga desde el CSV (una sola descarga)
-        st.markdown("#### ⚠️ Detección de under-triage en el historial")
+        st.markdown("#### ⚠️ Detección de under-triage en el historial (Fase 1)")
         try:
             from io import BytesIO
             csv_bytes = get_minio().get_object("datasets", "dataset_entrenamiento.csv").read()
@@ -853,64 +1000,3 @@ with tab_modelo:
                 st.success("No se detectaron casos de under-triage en el historial.")
         except Exception as e:
             st.info(f"Dataset no disponible todavía: {e}")
-
-        st.divider()
-
-        # ── Evaluación Fase 2 ─────────────────────────────────────────────────
-        st.markdown("#### 🎯 Evaluación Fase 2 — predicción sobre audios nuevos")
-        try:
-            from io import BytesIO
-            raw = get_minio().get_object("modelos", "evaluacion_fase2.json").read()
-            evaluacion = json.loads(raw)
-
-            mg = evaluacion.get("metricas_globales", {})
-            tc = evaluacion.get("triaje_clinico", {})
-
-            f1c, f2c, f3c, f4c = st.columns(4)
-            f1c.metric("Accuracy",         f"{mg.get('accuracy', 0):.2%}")
-            f2c.metric("Recall macro",     f"{mg.get('recall_macro', 0):.2%}")
-            f3c.metric("F1 macro",         f"{mg.get('f1_macro', 0):.2%}")
-            f4c.metric("Casos evaluados",  int(evaluacion.get("n_casos_validos", 0)))
-
-            t1c, t2c, t3c = st.columns(3)
-            t1c.metric("✅ Correctos",     int(tc.get("correctos", 0)))
-            t2c.metric("⚠️ Over-triage",   int(tc.get("over_triage", 0)))
-            t3c.metric("🚨 Under-triage",  int(tc.get("under_triage", 0)))
-
-            # Matriz de confusión
-            img_eval = descargar_imagen("evaluacion_fase2_confusion.png")
-            if img_eval:
-                _, c_center, _ = st.columns([1, 3, 1])
-                with c_center:
-                    st.image(img_eval, caption="Matriz de confusión Fase 2", use_container_width=True)
-
-            # Detalle por caso
-            por_caso = evaluacion.get("por_caso", [])
-            if por_caso:
-                with st.expander(f"Ver detalle por caso ({len(por_caso)} casos)"):
-                    df_eval = pd.DataFrame(por_caso)
-                    st.dataframe(
-                        df_eval.rename(columns={
-                            "guid":          "GUID",
-                            "etiqueta":      "Etiqueta LLM",
-                            "prediccion":    "Predicción ML",
-                            "valoracion":    "Valoración",
-                            "score":         "Score",
-                            "error_niveles": "Δ niveles",
-                        }),
-                        hide_index=True,
-                        use_container_width=True,
-                        height=320,
-                    )
-
-            fecha = evaluacion.get("fecha_evaluacion", "")
-            if fecha:
-                st.caption(f"Última evaluación: {fecha}")
-
-        except Exception as e:
-            st.info(
-                "No hay evaluación de Fase 2 todavía. "
-                "Sube un audio desde la pestaña '🩺 Nuevo Triaje' y, "
-                "cuando aparezca PREDICCION_COMPLETADA en el historial, "
-                "lanza `dag_evaluation` en Airflow para generar la evaluación."
-            )
