@@ -10,7 +10,6 @@ def _require(name: str) -> str:
     return val
 
 
-DATABASE_URL     = _require("DATABASE_URL")
 MISTRAL_API_KEY  = _require("MISTRAL_API_KEY")
 
 MINIO_ENDPOINT   = os.getenv("MINIO_ENDPOINT",   "minio:9000")

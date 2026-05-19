@@ -6,9 +6,9 @@ from minio import Minio
 
 logger = logging.getLogger(__name__)
 
+BUCKET_AUDIOS       = "audios"
 BUCKET_TEXTOS       = "textos"
 BUCKET_ENRIQUECIDOS = "enriquecidos"
-BUCKET_MODELOS      = "modelos"
 BUCKET_DATASETS     = "datasets"
 
 
@@ -18,7 +18,7 @@ class MinIOService:
         self._inicializar_buckets()
 
     def _inicializar_buckets(self):
-        for b in (BUCKET_TEXTOS, BUCKET_ENRIQUECIDOS, BUCKET_MODELOS, BUCKET_DATASETS):
+        for b in (BUCKET_AUDIOS, BUCKET_TEXTOS, BUCKET_ENRIQUECIDOS, BUCKET_DATASETS):
             try:
                 if not self._client.bucket_exists(b):
                     self._client.make_bucket(b)
@@ -32,21 +32,13 @@ class MinIOService:
         except Exception:
             return None
 
-    def descargar_modelo(self) -> bytes | None:
-        try:
-            return self._client.get_object(BUCKET_MODELOS, "modelo_triageia.pkl").read()
-        except Exception:
-            return None
-
-    def descargar_imagen(self, nombre: str) -> bytes | None:
-        try:
-            return self._client.get_object(BUCKET_MODELOS, nombre).read()
-        except Exception:
-            return None
-
     def subir_bytes(self, bucket: str, nombre: str, datos: bytes, content_type: str = "application/octet-stream") -> str:
         self._client.put_object(bucket, nombre, BytesIO(datos), len(datos), content_type=content_type)
         return f"minio://{bucket}/{nombre}"
+
+    def subir_audio(self, guid: str, datos: bytes, ext: str) -> str:
+        nombre = f"{guid}.{ext}"
+        return self.subir_bytes(BUCKET_AUDIOS, nombre, datos, content_type=f"audio/{ext}")
 
     def subir_texto(self, guid: str, texto: str) -> str:
         data = texto.encode("utf-8")

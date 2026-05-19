@@ -20,14 +20,19 @@ class Turno:
 class Caso:
     id: str
     categoria: str
+    origen: str = "dataset"          # "train" | "test" | "Simulación"
     turnos: list[Turno] = field(default_factory=list)
 
     @property
     def transcripcion(self) -> str:
         return " ".join(t.text for t in self.turnos)
 
+    @property
+    def num_turnos(self) -> int:
+        return len(self.turnos)
 
-def parsear_archivo(ruta: Path) -> dict[str, Caso]:
+
+def parsear_archivo(ruta: Path, origen: str = "dataset") -> dict[str, Caso]:
     casos: dict[str, Caso] = {}
     with open(ruta, encoding="utf-8") as f:
         for linea in f:
@@ -40,7 +45,7 @@ def parsear_archivo(ruta: Path) -> dict[str, Caso]:
             categoria, numero, start, end, texto = match.groups()
             caso_id = f"{categoria}{numero}"
             if caso_id not in casos:
-                casos[caso_id] = Caso(id=caso_id, categoria=categoria)
+                casos[caso_id] = Caso(id=caso_id, categoria=categoria, origen=origen)
             casos[caso_id].turnos.append(
                 Turno(start=float(start), end=float(end), text=texto.strip())
             )
@@ -50,7 +55,20 @@ def parsear_archivo(ruta: Path) -> dict[str, Caso]:
 
 
 def cargar_dataset(data_dir: Path) -> dict[str, Caso]:
-    casos = {}
-    casos.update(parsear_archivo(data_dir / "medical_train.info"))
-    casos.update(parsear_archivo(data_dir / "medical_test.info"))
+    """
+    Carga ambos .info. Si un caso aparece en los dos ficheros se queda con la
+    versión 'train' (que es la más completa) pero marca origen='train+test'.
+    """
+    train = parsear_archivo(data_dir / "medical_train.info", origen="train")
+    test  = parsear_archivo(data_dir / "medical_test.info",  origen="test")
+
+    casos: dict[str, Caso] = {}
+    # 1) Empezamos con los de train
+    casos.update(train)
+    # 2) Añadimos los de test que NO estén ya
+    for guid, c in test.items():
+        if guid in casos:
+            casos[guid].origen = "train+test"
+        else:
+            casos[guid] = c
     return casos

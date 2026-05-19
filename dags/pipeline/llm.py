@@ -6,7 +6,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
-MODELO          = "mistral-large-latest"
+MODELO          = "mistral-medium-latest"
 
 
 class LLMService:

@@ -1,10 +1,4 @@
 httpx
 psycopg2-binary
 pandas
-scikit-learn
-numpy
-joblib
 minio
-imbalanced-learn
-matplotlib
-openai-whisper

@@ -1,0 +1,172 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "type": "table",
+      "title": "⏱ Tiempos por fase de cada predicción",
+      "description": "Cada fila es una predicción. La barra horizontal de cada columna muestra cuánto tarda esa fase (más larga = más tiempo).",
+      "gridPos": {"h": 16, "w": 24, "x": 0, "y": 0},
+      "datasource": {"type": "postgres", "uid": "TriageIA-Postgres"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT ROW_NUMBER() OVER (ORDER BY inicio_solicitud DESC) AS \"#\", TO_CHAR(inicio_solicitud, 'DD/MM HH24:MI:SS') AS \"Fecha\", ROUND(EXTRACT(EPOCH FROM (fin_preprocesamiento - inicio_preprocesamiento))::numeric, 2)::float AS \"Whisper\", ROUND(EXTRACT(EPOCH FROM (fin_extraccion_entidades - inicio_extraccion_entidades))::numeric, 2)::float AS \"Mistral LLM\", ROUND(EXTRACT(EPOCH FROM (fin_entrenamiento - inicio_entrenamiento))::numeric, 3)::float AS \"ML Orange\", ROUND(EXTRACT(EPOCH FROM (fin_solicitud - inicio_solicitud))::numeric, 2)::float AS \"Total\" FROM entrevista WHERE motor_workflow IN ('Streamlit','API') AND fin_solicitud IS NOT NULL ORDER BY inicio_solicitud DESC LIMIT 50"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {"type": "auto"}
+          },
+          "unit": "s"
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "#"},
+            "properties": [
+              {"id": "custom.width", "value": 60},
+              {"id": "unit", "value": "short"},
+              {"id": "custom.cellOptions", "value": {"type": "auto"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Fecha"},
+            "properties": [
+              {"id": "custom.width", "value": 150},
+              {"id": "unit", "value": "string"},
+              {"id": "custom.cellOptions", "value": {"type": "auto"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Whisper"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {
+                "type": "gauge",
+                "mode": "gradient",
+                "valueDisplayMode": "color"
+              }},
+              {"id": "color", "value": {"mode": "fixed", "fixedColor": "#3B82F6"}},
+              {"id": "max", "value": 5},
+              {"id": "min", "value": 0}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Mistral LLM"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {
+                "type": "gauge",
+                "mode": "gradient",
+                "valueDisplayMode": "color"
+              }},
+              {"id": "color", "value": {"mode": "fixed", "fixedColor": "#A855F7"}},
+              {"id": "max", "value": 3},
+              {"id": "min", "value": 0}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "ML Orange"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {
+                "type": "gauge",
+                "mode": "gradient",
+                "valueDisplayMode": "color"
+              }},
+              {"id": "color", "value": {"mode": "fixed", "fixedColor": "#22C55E"}},
+              {"id": "max", "value": 2},
+              {"id": "min", "value": 0},
+              {"id": "decimals", "value": 3}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Total"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {
+                "type": "gauge",
+                "mode": "gradient",
+                "valueDisplayMode": "color"
+              }},
+              {"id": "color", "value": {"mode": "fixed", "fixedColor": "#EF4444"}},
+              {"id": "max", "value": 8},
+              {"id": "min", "value": 0}
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "md",
+        "footer": {"show": false, "reducer": ["mean"]}
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Total de predicciones",
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 16},
+      "datasource": {"type": "postgres", "uid": "TriageIA-Postgres"},
+      "targets": [{
+        "refId": "A",
+        "format": "table",
+        "rawSql": "SELECT COUNT(*) AS \"Total\" FROM entrevista WHERE motor_workflow IN ('Streamlit','API') AND fin_solicitud IS NOT NULL"
+      }],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "blue", "value": null}]}, "unit": "short"}},
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "textMode": "value"}
+    },
+    {
+      "type": "stat",
+      "title": "Tiempo medio Whisper",
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 16},
+      "datasource": {"type": "postgres", "uid": "TriageIA-Postgres"},
+      "targets": [{
+        "refId": "A",
+        "format": "table",
+        "rawSql": "SELECT AVG(EXTRACT(EPOCH FROM (fin_preprocesamiento - inicio_preprocesamiento)))::float AS \"avg\" FROM entrevista WHERE fin_preprocesamiento IS NOT NULL"
+      }],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "unit": "s", "decimals": 2, "thresholds": {"steps": [{"color": "#3B82F6", "value": null}]}}},
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "center", "textMode": "value"}
+    },
+    {
+      "type": "stat",
+      "title": "Tiempo medio Mistral",
+      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 16},
+      "datasource": {"type": "postgres", "uid": "TriageIA-Postgres"},
+      "targets": [{
+        "refId": "A",
+        "format": "table",
+        "rawSql": "SELECT AVG(EXTRACT(EPOCH FROM (fin_extraccion_entidades - inicio_extraccion_entidades)))::float AS \"avg\" FROM entrevista WHERE fin_extraccion_entidades IS NOT NULL"
+      }],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "unit": "s", "decimals": 2, "thresholds": {"steps": [{"color": "#A855F7", "value": null}]}}},
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "center", "textMode": "value"}
+    },
+    {
+      "type": "stat",
+      "title": "Tiempo medio ML",
+      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 16},
+      "datasource": {"type": "postgres", "uid": "TriageIA-Postgres"},
+      "targets": [{
+        "refId": "A",
+        "format": "table",
+        "rawSql": "SELECT AVG(EXTRACT(EPOCH FROM (fin_entrenamiento - inicio_entrenamiento)))::float AS \"avg\" FROM entrevista WHERE fin_entrenamiento IS NOT NULL"
+      }],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "unit": "s", "decimals": 3, "thresholds": {"steps": [{"color": "#22C55E", "value": null}]}}},
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "center", "textMode": "value"}
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["triageia"],
+  "templating": {"list": []},
+  "time": {"from": "now-24h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "TriageIA — Tiempos por fase",
+  "uid": "triageia-tiempos",
+  "version": 5,
+  "weekStart": ""
+}

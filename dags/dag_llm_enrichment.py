@@ -1,13 +1,19 @@
 """
 DAG Fase 1 — Paso 2: Enriquecimiento LLM
 Lee conversaciones.csv de MinIO, llama a Mistral por cada caso,
-guarda un JSON por caso (reanudable si falla), y genera dataset_entrenamiento.csv.
+guarda un JSON por caso (reanudable si falla), y genera
+dataset_entrenamiento.csv para entrenar el modelo en Orange.
 Se lanza automáticamente cuando termina dag_ingestion.
+
+Nota: este DAG NO guarda nada en Postgres. La idempotencia se basa en
+`json_existe(guid)` sobre el bucket de MinIO `enriquecidos`. Reanudable
+sin pérdida: los casos ya enriquecidos se saltan.
 """
 
 import io
 import json
 import logging
+import os
 import re
 import time
 from datetime import datetime, timedelta
@@ -15,10 +21,9 @@ from datetime import datetime, timedelta
 import pandas as pd
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
-from pipeline.config import DATABASE_URL, MISTRAL_API_KEY
-from pipeline.db import DatabaseService
+from pipeline.config import MISTRAL_API_KEY
+from pipeline.diccionario_clinico import normalizar_entidades
 from pipeline.llm import LLMService
 from pipeline.minio_client import (
     descargar_bytes,
@@ -115,7 +120,6 @@ def _llamar_con_retry(llm: LLMService, texto: str) -> tuple[dict, float, int]:
 # ------------------------------------------------------------------ #
 
 def _enriquecer(**context):
-    db  = DatabaseService(DATABASE_URL)
     llm = LLMService(MISTRAL_API_KEY)
 
     csv_bytes = descargar_bytes(BUCKET_DATASETS, "conversaciones.csv")
@@ -137,20 +141,17 @@ def _enriquecer(**context):
             continue
 
         try:
-            now = datetime.now()
-            db.actualizar_entrevista(guid, estado="PROCESANDO", inicio_preprocesamiento=now)
-
-            # Preprocesamiento (limpieza básica del texto)
-            texto_limpio = texto.strip()
-            fin_prep     = datetime.now()
-            db.actualizar_entrevista(guid, fin_preprocesamiento=fin_prep,
-                                     inicio_extraccion_entidades=fin_prep)
-
-            # Llamada LLM (extrae entidades, normaliza, etiqueta y calcula score en una sola llamada)
-            datos, duracion_llm, reintentos = _llamar_con_retry(llm, texto_limpio)
-            fin_llm = datetime.now()
-
+            # Llamada LLM (extrae entidades, normaliza, etiqueta y calcula score
+            # en una sola llamada)
+            datos, duracion_llm, reintentos = _llamar_con_retry(llm, texto.strip())
             _validar_datos(datos, guid)
+
+            # Calcular la entidad clínica principal (la más grave) aplicando
+            # el diccionario clínico. Se guarda en el JSON para que el detalle
+            # del historial pueda mostrarla sin reprocesar.
+            ents_raw  = datos.get("entidades_normalizadas", []) or []
+            ents_norm = normalizar_entidades(ents_raw, max_n=1)
+            entidad_principal = ents_norm[0] if ents_norm else "Sin_entidad"
 
             enriquecido = {
                 "guid":                   guid,
@@ -160,24 +161,13 @@ def _enriquecer(**context):
                 "resumen":                datos.get("resumen_es", ""),
                 "entidades":              datos.get("entidades_extraidas", []),
                 "entidades_normalizadas": datos.get("entidades_normalizadas", []),
+                "entidad_principal":      entidad_principal,
                 "etiqueta":               datos.get("triage_real", ""),
                 "razonamiento":           datos.get("justificacion", ""),
                 "score_ansiedad":         _parsear_score(datos.get("score_ansiedad", 0.0)),
                 "prediccion_entrenada":   "",
             }
             subir_json(guid, enriquecido)
-
-            db.actualizar_entrevista(
-                guid,
-                estado="SCORE_CALCULADO",
-                fin_extraccion_entidades=fin_llm,
-                inicio_normalizacion=fin_llm,
-                fin_normalizacion=fin_llm,
-                inicio_etiquetado=fin_llm,
-                fin_etiquetado=fin_llm,
-                inicio_score=fin_llm,
-                fin_score=fin_llm,
-            )
 
             procesados += 1
             logger.info(
@@ -191,34 +181,52 @@ def _enriquecer(**context):
 
         except Exception as exc:
             errores += 1
-            db.actualizar_entrevista(guid, estado="ERROR")
             logger.error("✗ %s: %s", guid, exc)
 
     # ---- Construir dataset_entrenamiento.csv ----
+    # Usa la entidad_principal que ya se calculó al enriquecer cada caso.
+    # El one-hot encoding NO se hace aquí — se hace en Orange con el widget
+    # Continuize sobre las columnas categóricas entidad_principal y categoria.
     logger.info("→ Construyendo dataset_entrenamiento.csv...")
-    registros = []
-    guids_ok  = []
 
+    registros = []
     for _, fila in df_conv.iterrows():
         try:
-            registros.append(descargar_json(fila["guid"]))
-            guids_ok.append(fila["guid"])
+            j = descargar_json(fila["guid"])
+            # Fallback: si el JSON es antiguo y no tiene entidad_principal,
+            # se calcula al vuelo desde entidades_normalizadas.
+            ent_ppal = j.get("entidad_principal")
+            if not ent_ppal:
+                ents_raw  = j.get("entidades_normalizadas", []) or []
+                ents_norm = normalizar_entidades(ents_raw, max_n=1)
+                ent_ppal  = ents_norm[0] if ents_norm else "Sin_entidad"
+
+            registros.append({
+                "entidad_principal": ent_ppal,
+                "resumen":           j.get("resumen", "") or "",
+                "categoria":         j.get("categoria", "") or "",
+                "score_ansiedad":    j.get("score_ansiedad", 0.0),
+                "etiqueta":          j.get("etiqueta", ""),
+            })
         except Exception as exc:
             logger.warning("Sin JSON para %s: %s", fila["guid"], exc)
 
     df_train = pd.DataFrame(registros)
-    for col in ("entidades", "entidades_normalizadas"):
-        if col in df_train.columns:
-            df_train[col] = df_train[col].apply(
-                lambda x: json.dumps(x, ensure_ascii=False) if isinstance(x, list) else x
-            )
+    df_train = df_train[df_train["etiqueta"].isin(["C1", "C2", "C3", "C4", "C5"])]
 
     csv_bytes = df_train.to_csv(index=False).encode("utf-8")
-    subir_bytes(BUCKET_DATASETS, "dataset_entrenamiento.csv", csv_bytes, content_type="text/csv")
-    logger.info("✓ dataset_entrenamiento.csv guardado (%d casos)", len(df_train))
 
-    for guid in guids_ok:
-        db.actualizar_entrevista(guid, estado="DATASET_GENERADO")
+    local_dir = "/opt/airflow/data/processed"
+    os.makedirs(local_dir, exist_ok=True)
+    local_path = os.path.join(local_dir, "dataset_entrenamiento.csv")
+    with open(local_path, "wb") as f:
+        f.write(csv_bytes)
+    subir_bytes(BUCKET_DATASETS, "dataset_entrenamiento.csv", csv_bytes, content_type="text/csv")
+
+    logger.info(
+        "✓ dataset_entrenamiento.csv (%d filas, %d columnas) → MinIO + %s",
+        len(df_train), df_train.shape[1], local_path,
+    )
 
     duracion_total = (datetime.now() - t_dag_inicio).total_seconds()
     throughput     = procesados / (duracion_total / 60) if duracion_total > 0 else 0
@@ -242,9 +250,8 @@ with DAG(
         task_id="enriquecer_con_llm",
         python_callable=_enriquecer,
     )
-    trigger = TriggerDagRunOperator(
-        task_id="trigger_model_training",
-        trigger_dag_id="dag_model_training",
-        wait_for_completion=False,
-    )
-    enriquecer >> trigger
+    # Nota: el entrenamiento del modelo ya no se hace en Airflow.
+    # Se hace en Orange Data Mining (workflow externo) usando
+    # data/processed/dataset_entrenamiento.csv. El modelo .pkcls resultante
+    # se guarda en ./models/randomforest_model.pkcls (montado en /app/models
+    # dentro del contenedor de la API).

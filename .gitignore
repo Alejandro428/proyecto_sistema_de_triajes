@@ -14,6 +14,10 @@ models/*
 # Processed data (generated, not source)
 data/processed/
 data/audio/
+data/audios/
+
+# Orange Data Mining temporary files
+*.ows.swp*
 
 # Jupyter checkpoints
 .ipynb_checkpoints/

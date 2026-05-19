@@ -1,3 +1,7 @@
+"""
+Cliente MinIO + helpers para el frontend Streamlit.
+"""
+
 import json
 import os
 from io import BytesIO
@@ -10,13 +14,12 @@ MINIO_ACCESS   = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET   = os.getenv("MINIO_SECRET_KEY", "minioadmin")
 
 BUCKET_ENRIQUECIDOS = "enriquecidos"
-BUCKET_MODELOS      = "modelos"
 
 
 @st.cache_resource
 def get_minio() -> Minio:
     client = Minio(MINIO_ENDPOINT, access_key=MINIO_ACCESS, secret_key=MINIO_SECRET, secure=False)
-    for b in [BUCKET_ENRIQUECIDOS, BUCKET_MODELOS, "audios", "textos", "datasets"]:
+    for b in [BUCKET_ENRIQUECIDOS, "audios", "textos", "datasets"]:
         if not client.bucket_exists(b):
             client.make_bucket(b)
     return client
@@ -26,23 +29,6 @@ def descargar_json(guid: str) -> dict | None:
     try:
         data = get_minio().get_object(BUCKET_ENRIQUECIDOS, f"{guid}.json").read()
         return json.loads(data)
-    except Exception:
-        return None
-
-
-@st.cache_resource(show_spinner=False)
-def descargar_modelo():
-    try:
-        import joblib
-        data = get_minio().get_object(BUCKET_MODELOS, "modelo_triageia.pkl").read()
-        return joblib.load(BytesIO(data))
-    except Exception:
-        return None
-
-
-def descargar_imagen(nombre: str) -> bytes | None:
-    try:
-        return get_minio().get_object(BUCKET_MODELOS, nombre).read()
     except Exception:
         return None
 

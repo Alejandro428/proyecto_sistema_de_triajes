@@ -1,407 +1,398 @@
-# TriageIA — Sistema de Triaje Médico con IA
+# TriageIA — Sistema de Triaje Manchester automatizado
 
-Proyecto del Curso de Especialización IA-BD 25/26.
-Herramienta de soporte a la decisión clínica que transforma entrevistas clínicas en una prioridad médica estructurada siguiendo el **Protocolo Manchester (C1–C5)**.
+Sistema que clasifica entrevistas clínicas en niveles de prioridad **Manchester (C1-C5)** combinando:
 
-Basado en el corpus de **Fareez et al. (2022)** — 270 entrevistas clínicas simuladas (metodología OSCE), publicado en *Nature Scientific Data*.
-
-> El paper original cita 272 casos. Los archivos `.info` entregados contienen 270 IDs válidos con transcripción parseável; los 2 restantes no tienen datos de audio en el dataset distribuido.
+- **Whisper** para transcribir audio
+- **Mistral** (LLM) para extraer entidades clínicas
+- **Random Forest** entrenado en **Orange Data Mining** para predecir el nivel
 
 ---
 
-## Qué hace este sistema
+## Tabla de contenidos
 
-1. Ingiere transcripciones de entrevistas clínicas desde archivos `.info`
-2. Las enriquece con un LLM (Mistral `mistral-large-latest`): extrae síntomas en texto libre, los normaliza a terminología médica estándar, asigna un nivel Manchester y calcula un score de ansiedad — todo en una sola llamada con prompt few-shot
-3. Genera `dataset_entrenamiento.csv` y entrena un modelo NLP (TF-IDF + Logistic Regression) sobre las entidades normalizadas
-4. Rellena `prediccion_entrenada` en todos los casos con el modelo entrenado
-5. Expone un dashboard Streamlit (4 pestañas) y una REST API para nuevas predicciones en tiempo real
-6. Registra trazabilidad completa por caso: timestamps por etapa, estado, URLs de artefactos en MinIO
+1. [Arquitectura](#arquitectura)
+2. [Flujo end-to-end](#flujo-end-to-end)
+3. [Stack tecnológico](#stack-tecnológico)
+4. [Estructura del repositorio](#estructura-del-repositorio)
+5. [Setup inicial](#setup-inicial)
+6. [Uso del sistema](#uso-del-sistema)
+7. [Workflow de Orange Data Mining](#workflow-de-orange-data-mining)
+8. [Diccionario clínico](#diccionario-clínico)
+9. [Esquema de la base de datos](#esquema-de-la-base-de-datos)
+10. [Servicios y puertos](#servicios-y-puertos)
+11. [Variables de entorno](#variables-de-entorno)
 
 ---
 
 ## Arquitectura
 
 ```
-                              ┌─── FASE 1 (batch entrenamiento) ───┐
-data/raw/ (.info)             │                                    │
-     │                        ▼                                    │
-┌──────────────────┐  ┌──────────────────────┐  ┌─────────────────────────┐
-│  dag_ingestion   │─▶│  dag_llm_enrichment  │─▶│   dag_model_training    │
-│                  │  │                      │  │                         │
-│ .info → CSV      │  │ Mistral × 270        │  │ TF-IDF + LogReg         │
-│ → MinIO/Postgres │  │ → dataset_entren.csv │  │ → modelo.pkl en MinIO   │
-└──────────────────┘  └──────────────────────┘  └─────────────────────────┘
-
-                              ┌─── FASE 2 (audios nuevos) ─────────┐
-data/audios/ (mp3,wav,…)      │                                    │
-     │                        ▼                                    │
-┌──────────────────────────┐  ┌──────────────────────────┐
-│ dag_prediction_phase_2   │─▶│ dag_evaluation           │
-│                          │  │                          │
-│ Whisper → Mistral → ML   │  │ etiqueta vs prediccion   │
-│ → JSON + entrevista row  │  │ → evaluacion_fase2.json  │
-└──────────────────────────┘  └──────────────────────────┘
-
-                              ┌─── FASE 3 (tiempo real) ───────────┐
-                              │                                    │
-                    ┌─────────▼────────┐    ┌──────────────────────▼───┐
-                    │  Streamlit       │    │  FastAPI                 │
-                    │  :8501           │    │  :8000                   │
-                    │ Audio→Whisper→ML │    │ POST /fase3/predict       │
-                    └──────────────────┘    └──────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                        FASE 1 — DATASET (Airflow)                   │
+│                                                                     │
+│  .info files (Fareez OSCE)                                          │
+│         │                                                           │
+│         ▼                                                           │
+│  [dag_ingestion]  parser → conversaciones.csv (MinIO + disco + DB) │
+│         │                                                           │
+│         ▼  (trigger automático)                                     │
+│  [dag_llm_enrichment]                                               │
+│      Mistral extrae entidades por cada conversación                 │
+│      diccionario_clinico aplica 20 entidades estándar               │
+│      → dataset_entrenamiento.csv                                    │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│         FASE 2 — ENTRENAMIENTO (Orange Data Mining, manual)         │
+│                                                                     │
+│  dataset_entrenamiento.csv                                          │
+│         │                                                           │
+│         ▼                                                           │
+│   File → Continuize (one-hot) → Random Forest → Save Model          │
+│   Test & Score (CV 5-fold) + Confusion Matrix para validar          │
+│                                                                     │
+│   Salida: models/randomforest_model.pkcls                           │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                     FASE 3 — PREDICCIÓN (Streamlit)                 │
+│                                                                     │
+│  Usuario sube audio                                                 │
+│         │                                                           │
+│   1. Whisper          → transcripción                              │
+│   2. Mistral (LLM)    → entidades, categoría, score_ansiedad       │
+│                         (NO predice triaje)                         │
+│   3. diccionario      → entidad_principal (la más grave)            │
+│   4. Random Forest    → predicción C1-C5                            │
+│                                                                     │
+│   Tiempos por fase → PostgreSQL                                     │
+│   Resultado JSON   → MinIO                                          │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Servicios Docker
+---
 
-| Servicio | Puerto | Rol |
+## Flujo end-to-end
+
+### Fase 1 — Construcción del dataset (Airflow)
+
+1. **`dag_ingestion`** lee los ficheros `.info` del dataset Fareez OSCE en `data/raw/`:
+   - Parsea cada línea (regex sobre `audio/CAR0001.mp3[start,end]\ttexto`)
+   - Agrupa por caso y ordena por timestamp
+   - Sube cada texto a MinIO (`textos/{guid}.txt`)
+   - Genera **`conversaciones.csv`** (270 filas) en `data/processed/` y MinIO
+2. **`dag_llm_enrichment`** (se lanza automáticamente al terminar el anterior):
+   - Por cada conversación llama a la API de Mistral con el prompt clínico
+   - Mistral devuelve `entidades_extraidas`, `entidades_normalizadas`, `triage_real`, `score_ansiedad`, `resumen_es`, `justificacion`
+   - Aplica el **diccionario clínico** (`pipeline/diccionario_clinico.py`) que reduce las ~539 etiquetas crudas que devuelve el LLM a las **20 entidades estándar** del vocabulario y se queda con la más grave
+   - Cada JSON enriquecido se guarda en MinIO (`enriquecidos/{guid}.json`) — es idempotente, si ya existe se salta
+   - Genera **`dataset_entrenamiento.csv`** con 5 columnas: `entidad_principal`, `resumen`, `categoria`, `score_ansiedad`, `etiqueta`
+
+> Los DAGs **no escriben en Postgres**: los datos del entrenamiento solo viven
+> en MinIO y en `data/processed/`. La tabla `entrevista` se reserva
+> exclusivamente para las predicciones en tiempo real de Fase 3 (audios
+> subidos desde el frontend o llamadas REST a la API).
+
+### Fase 2 — Entrenamiento (Orange Data Mining)
+
+El entrenamiento se hace **fuera de Docker**, en Orange Desktop, porque:
+- Permite comparar visualmente varios modelos
+- Genera matrices de confusión, ROC, métricas, etc.
+- El profesor puede ver el workflow visual
+
+El modelo resultante (`randomforest_model.pkcls`) se guarda en `models/` y la API/Frontend lo detectan automáticamente.
+
+### Fase 3 — Predicción en producción (Streamlit)
+
+El frontend Streamlit tiene **2 pestañas**:
+
+**🩺 Nuevo Triaje**: subes un audio → ves la predicción ML + tiempos por fase.
+**📋 Historial**: tabla con todas las predicciones + detalle al hacer clic.
+
+El flujo interno:
+1. **Whisper** transcribe el audio (modelo `base`, español)
+2. **Mistral** extrae entidades + categoría + score_ansiedad (NO clasifica)
+3. Diccionario clínico filtra a **una sola entidad de mayor prioridad**
+4. **Random Forest de Orange** predice C1-C5
+5. Cada fase queda registrada con timestamps en PostgreSQL
+
+---
+
+## Stack tecnológico
+
+| Capa | Tecnología | Función |
 |---|---|---|
-| `postgres` | 5433 | Tracking de estados del workflow (tabla `entrevista`) |
-| `minio` | 9000 / 9001 | Almacenamiento de artefactos (UI en :9001) |
-| `airflow-webserver` | 8080 | UI de Airflow — lanzar DAGs y ver logs |
-| `airflow-scheduler` | — | Motor que ejecuta los DAGs |
-| `frontend` | 8501 | Dashboard Streamlit (audio → Whisper → Mistral → ML) |
-| `api` | 8000 | REST API de predicción y métricas |
-
-### Buckets MinIO
-
-| Bucket | Contenido |
-|---|---|
-| `textos/` | Transcripciones originales: `{guid}.txt` |
-| `enriquecidos/` | JSON con análisis de Mistral por caso: `{guid}.json` |
-| `datasets/` | `conversaciones.csv` y `dataset_entrenamiento.csv` |
-| `modelos/` | `modelo_triageia.pkl` + 3 gráficas PNG |
-| `audios/` | Audios subidos desde el frontend |
+| Orquestación | **Apache Airflow 2.9** | DAGs de ingestión y enrichment |
+| Backend API | **FastAPI** (Python 3.11) | Endpoint `/fase3/predict` |
+| Frontend | **Streamlit** | UI con 2 pestañas |
+| BD | **PostgreSQL 16** | Tabla `entrevista` con timestamps por fase |
+| Object storage | **MinIO** (S3-compatible) | audios, textos, JSONs enriquecidos, datasets |
+| Transcripción | **OpenAI Whisper** (`base`) | Audio → texto en español |
+| Extracción NLP | **Mistral** (`mistral-medium-latest`) | Texto → entidades clínicas |
+| Modelo ML | **Random Forest** entrenado en **Orange Data Mining** | Predicción C1-C5 |
+| Contenedores | **Docker Compose** | Orquestación local |
 
 ---
 
-## Protocolo Manchester
-
-| Nivel | Color | Tiempo máximo | Descripción |
-|---|---|---|---|
-| C1 | Rojo | 0 min | Emergencia — riesgo vital inmediato |
-| C2 | Naranja | 10 min | Muy urgente |
-| C3 | Amarillo | 60 min | Urgente |
-| C4 | Verde | 120 min | Menos urgente |
-| C5 | Azul | 240 min | No urgente |
-
----
-
-## Base de datos — tabla `entrevista`
-
-Una única tabla para tracking del workflow completo. Los datos clínicos viven en MinIO.
-
-```sql
-GUID_Entrevista             -- clave primaria (ej: RES0001, CAR0003, MSK0047)
-URL_Texto_Original          -- minio://textos/{guid}.txt
-URL_Dataset_Generado        -- minio://datasets/dataset_entrenamiento.csv
-URL_Modelo_Entrenado        -- minio://modelos/modelo_triageia.pkl
-Motor_Workflow              -- 'Airflow' (batch) o 'Streamlit' (tiempo real)
-Estado                      -- ver máquina de estados abajo
-```
-
-### Timestamps por etapa
-
-| Campo | Rellena | Qué mide |
-|---|---|---|
-| `Inicio_Solicitud` | dag_ingestion | Cuando el caso entra al sistema |
-| `Fin_Solicitud` | dag_model_training | Cuando el pipeline completo termina |
-| `Inicio/Fin_Preprocesamiento` | dag_llm_enrichment | Limpieza del texto (~milisegundos) |
-| `Inicio_Extraccion_Entidades` | dag_llm_enrichment | Inicio de la llamada a Mistral |
-| `Fin_Extraccion_Entidades` | dag_llm_enrichment | Fin de la llamada a Mistral (~15s) |
-| `Inicio/Fin_Normalizacion` | dag_llm_enrichment | **Mismo valor que Fin_Extraccion** — Mistral hace extracción + normalización + etiquetado + score en una sola llamada |
-| `Inicio/Fin_Etiquetado` | dag_llm_enrichment | Ídem |
-| `Inicio/Fin_Score` | dag_llm_enrichment | Ídem |
-| `Inicio/Fin_Entrenamiento` | dag_model_training | Duración del fit() del modelo ML |
-
-**Nota sobre E2E** (`Fin_Solicitud - Inicio_Solicitud`): en el pipeline batch, todos los 270 casos comparten el mismo `Fin_Solicitud` (cuando terminó el entrenamiento). Por tanto, el E2E de cada caso en Fase 1 es ~107 minutos (tiempo total del pipeline, no tiempo individual). Para nuevos casos procesados en tiempo real (Fase 3 Streamlit), el E2E es ~20-30 segundos.
-
-### Máquina de estados
-
-```
-Fase 1 (batch entrenamiento, Motor_Workflow='Airflow'):
-  INGESTED → PROCESANDO → SCORE_CALCULADO → DATASET_GENERADO → MODELO_ENTRENADO
-
-Fase 2 (audios nuevos, Motor_Workflow='Airflow_Fase2'):
-  PROCESANDO → PREDICCION_COMPLETADA → EVALUACION_COMPLETADA
-
-Fase 3 (tiempo real, Motor_Workflow='Streamlit' o 'API'):
-  PREDICIENDO → PREDICCION_COMPLETADA
-
-Cualquier fase:
-  ERROR  (con razón en logs de Airflow + columna Estado)
-```
-
----
-
-## Fases del proyecto
-
-### Fase 1 — Ingeniería de datos y entrenamiento ✅ COMPLETADA
-
-**Tres DAGs en Airflow que se lanzan en cadena automáticamente:**
-
-| DAG | Input | Output | Estado final en BD |
-|---|---|---|---|
-| `dag_ingestion` | Archivos `.info` en `data/raw/` | `conversaciones.csv` en MinIO | `INGESTED` |
-| `dag_llm_enrichment` | `conversaciones.csv` | `dataset_entrenamiento.csv` en MinIO | `DATASET_GENERADO` |
-| `dag_model_training` | `dataset_entrenamiento.csv` | `modelo_triageia.pkl` + gráficas + `prediccion_entrenada` rellena | `MODELO_ENTRENADO` |
-
-**Columnas de `dataset_entrenamiento.csv`:**
-
-| Columna | Descripción |
-|---|---|
-| `guid` | Identificador único del caso (RES0001, CAR0003…) |
-| `origen` | `Dataset` o `Simulación` |
-| `categoria` | Categoría médica: RES / MSK / GAS / CAR / DER / GEN |
-| `texto` | Transcripción completa de la entrevista |
-| `resumen` | Resumen en español generado por Mistral |
-| `entidades` | Síntomas tal como aparecen en el texto (lista JSON) |
-| `entidades_normalizadas` | Términos clínicos estandarizados (lista JSON) |
-| `etiqueta` | Nivel Manchester asignado por Mistral: C1–C5 (ground truth) |
-| `razonamiento` | Justificación clínica del nivel asignado |
-| `score_ansiedad` | Score de ansiedad 0.0–1.0 |
-| `prediccion_entrenada` | Predicción del modelo ML (rellena al final de `dag_model_training`) |
-
-**Cómo ejecutar Fase 1:**
-```bash
-# Arrancar todo
-docker-compose up --build -d
-
-# Esperar ~1 minuto a que Airflow esté listo
-# http://localhost:8080  →  usuario: admin  /  contraseña: admin
-
-# En la UI de Airflow:
-# → Lanzar dag_ingestion
-# → dag_llm_enrichment se lanza automáticamente (tarda ~70 min por rate limit de Mistral)
-# → dag_model_training se lanza automáticamente al terminar
-
-# Frontend: http://localhost:8501
-# API docs: http://localhost:8000/docs
-```
-
-> Si `dag_llm_enrichment` falla a mitad, puedes re-lanzarlo sin perder trabajo: los casos ya procesados tienen JSON en MinIO y se saltan automáticamente gracias a `stat_object`.
-
----
-
-### Modelo de Machine Learning — decisión técnica
-
-Se optó por **TF-IDF + Logistic Regression** en lugar de RandomForest por las siguientes razones:
-
-- **Enfoque NLP**: el modelo trabaja sobre texto (entidades normalizadas unidas como frase). TF-IDF captura la importancia de cada término clínico y sus combinaciones (`ngram_range=(1,2)`), más apropiado que representación binaria de presencia/ausencia.
-- **Normalización previa por Mistral**: el LLM convierte "can't breathe", "me ahogo" y "falta de aire" en `"Disnea"`. TF-IDF sobre entidades normalizadas equivale a trabajar en un espacio semántico limpio.
-- **Interpretabilidad**: los coeficientes de LogReg muestran qué términos clínicos favorecen cada nivel Manchester (visible en `grafica_importancia.png`).
-- **Probabilidades calibradas**: LogReg da probabilidades por clase bien calibradas, útiles para el score de urgencia.
-- **Manejo del desequilibrio**: `class_weight='balanced'` pondera automáticamente las clases minoritarias (C1, C2). SMOTE adaptativo se aplica cuando todas las clases tienen ≥ 2 muestras.
-
-**Pipeline de features:**
-```
-entidades_normalizadas → " ".join() → TfidfVectorizer(ngram_range=(1,2), sublinear_tf=True) ┐
-                                                                                              ├── hstack → LogReg
-score_ansiedad ──────────────────────────────────────────────────────────────────────────────┘
-```
-
-**Métricas actuales** (test 20%, 54 casos):
-```
-Accuracy:   51.85%
-Precision:  49.86% (macro)
-Recall:     65.99% (macro)  ← métrica clave en triaje clínico
-F1:         46.48% (macro)
-```
-
-**Artefacto guardado en MinIO** (`modelos/modelo_triageia.pkl`):
-```python
-{
-    "vectorizador": TfidfVectorizer,   # para transform() en predicción
-    "modelo":       LogisticRegression,
-    "metricas":     {"accuracy": 0.5185, "precision_macro": ..., "n_casos": 270, ...}
-}
-```
-
-La limitación principal es que C1 tiene solo 1 caso en el dataset (Mistral asignó muy pocas emergencias), lo que hace imposible aprender esa clase. Se mejorará añadiendo casos de simulación en Fase 2.
-
----
-
-### Fase 2 — Predicción y evaluación sobre audios nuevos ✅ COMPLETADA
-
-Dos DAGs nuevos que procesan **audios reales** (no vistos durante el entrenamiento) usando el modelo de Fase 1:
-
-| DAG | Input | Qué hace | Output |
-|---|---|---|---|
-| `dag_prediction_phase_2` | Audios en `data/audios/` (mp3/wav/m4a/ogg/webm/flac) | Whisper → Mistral (con retry 429) → modelo ML | JSON en MinIO con `prediccion_prueba` + fila en `entrevista` con `Motor_Workflow='Airflow_Fase2'` |
-| `dag_evaluation` | Casos `PREDICCION_COMPLETADA` de Fase 2 | Compara `etiqueta` (LLM) vs `prediccion_prueba` (ML), detecta under/over-triage | `evaluacion_fase2.json` + `evaluacion_fase2_confusion.png` en MinIO `modelos/` |
-
-**Cómo ejecutar Fase 2:**
-```bash
-# 1. Dejar audios en data/audios/ (cualquier formato soportado por Whisper)
-cp mi_paciente_001.mp3 data/audios/
-
-# 2. En Airflow UI lanzar dag_prediction_phase_2
-#    → procesa todos los audios nuevos
-#    → al terminar dispara dag_evaluation automáticamente
-
-# 3. Resultados en MinIO console (http://localhost:9001 → bucket modelos):
-#    - evaluacion_fase2.json    (métricas globales + valoración por caso)
-#    - evaluacion_fase2_confusion.png
-```
-
-**Reanudación**: el GUID se genera de forma determinista a partir del nombre del archivo (`FASE2-<nombre_sanitizado>`), así que re-lanzar el DAG salta los audios ya procesados (vía `existe_entrevista`).
-
-**Valoración por caso** (formato del enunciado):
-
-| Tipo | Cómo se calcula | Score |
-|---|---|---|
-| CORRECTO | `etiqueta == prediccion_prueba` | 1.0 |
-| OVER_TRIAGE | ML predice MÁS urgente que el LLM | 0.5–0.85 (degrada poco) |
-| UNDER_TRIAGE | ML predice MENOS urgente que el LLM (peligroso en clínica) | 0.0–0.75 (degrada fuerte) |
-
-El sesgo de penalización está intencionalmente cargado contra el under-triage porque en triaje real es más grave clasificar un caso emergente como rutinario que al revés.
-
----
-
-## Gestión de errores
-
-| Punto de fallo | Estrategia |
-|---|---|
-| **LLM Mistral 429 (rate limit)** | Retry con back-off exponencial (15s → 30s → 60s → 120s, 6 intentos) en `dag_llm_enrichment`; 4 intentos en `dag_prediction_phase_2` |
-| **LLM Mistral 5xx u otro error** | Caso marcado `Estado='ERROR'` en Postgres, DAG continúa con el siguiente — se puede re-lanzar y `json_existe` salta los ya procesados |
-| **JSON malformado del LLM** | `_extraer_json()` intenta 3 estrategias: parseo directo, limpieza de markdown, regex de `{…}`. Si todas fallan → ERROR |
-| **Validación de respuesta LLM** | `_validar_datos()` verifica que `triage_real` esté en {C1..C5} y que existan los campos obligatorios |
-| **Whisper devuelve transcripción vacía** | El caso queda en ERROR; el audio no se borra para poder reintentar |
-| **Modelo ML no disponible en MinIO** | El DAG aborta con error claro; el frontend muestra `"N/A"` como predicción y un warning |
-| **Postgres caído** | `crear_entrevista` / `actualizar_entrevista` levantan la excepción → tarea Airflow falla → retry automático (config en `default_args`) |
-| **MinIO caído** | Misma propagación; Airflow reintenta la tarea entera |
-| **Tarea Airflow zombie** | Configurado en docker-compose: `ZOMBIE_THRESHOLD_SECS=7200` (2h) — necesario porque dag_llm_enrichment tarda ~70 min |
-| **Reanudación de pipeline interrumpido** | Cada DAG es idempotente: ingestion verifica con `existe_entrevista`, enrichment con `json_existe` en MinIO, prediction_phase_2 con GUID determinista por filename |
-
-Todos los errores se registran tanto en los logs de Airflow (por tarea) como en la columna `Estado='ERROR'` de la tabla `entrevista`, lo que permite filtrarlos desde el frontend.
-
----
-
-## Por qué Airflow y no n8n
-
-El enunciado permite elegir entre n8n, Airflow o ambos. Elegimos **solo Airflow** por las siguientes razones:
-
-- **Procesamiento batch pesado**: el enriquecimiento LLM tarda ~70 min sobre 270 casos. Airflow gestiona reintentos por tarea, persistencia de estado y trazabilidad de runs largos mejor que un flujo visual n8n.
-- **DAGs versionados en código**: los workflows viven en `dags/*.py`, revisables en git y testables como código Python normal. n8n los expresa en JSON exportado de la UI, peor para diffs y code review.
-- **Dependencias entre DAGs**: `dag_ingestion → dag_llm_enrichment → dag_model_training` se encadenan con `TriggerDagRunOperator`. Lo mismo `dag_prediction_phase_2 → dag_evaluation`.
-- **Reanudación**: si un DAG cae a mitad, se puede re-lanzar y cada tarea verifica el estado en Postgres/MinIO antes de reprocesar. n8n requiere lógica manual para esto.
-- **Casos de tiempo real ya cubiertos** sin n8n: la API FastAPI (`POST /fase3/predict`) y el frontend Streamlit (Tab "Nuevo Triaje") atienden las peticiones síncronas que serían el caso de uso natural de un webhook n8n.
-
-n8n hubiera sido la opción correcta si necesitásemos integrar muchas APIs externas (Slack, Telegram, email) o exponer un webhook configurable por no-developers. Para este sistema, todos los consumidores están dentro de docker-compose y son código.
-
----
-
-### Fase 3 — Frontend y auditoría ✅ COMPLETADA
-
-Dashboard Streamlit con 4 pestañas — http://localhost:8501:
-
-| Pestaña | Función |
-|---|---|
-| 🩺 Nuevo Triaje | Sube audio → Whisper (`base`) transcribe → Mistral analiza → ML predice → resultado Manchester con colores, métricas de tiempo por fase |
-| 📋 Historial | Tabla filtrable de todos los casos (timestamp Madrid, duraciones formateadas), detalle por GUID con tarjetas por sección |
-| 📊 Métricas del Pipeline | KPIs: total/completadas/errores, tiempo medio LLM y E2E; gráficas de distribución de estados y latencia LLM; tiempos medios por etapa |
-| 🤖 Métricas del Modelo | Accuracy/Recall/F1/F1, gráficas (distribución Manchester, matriz de confusión, top-15 términos clínicos), detección de under-triage del historial |
-
-**Detalles técnicos del frontend:**
-- Whisper integrado directamente en el contenedor (no microservicio separado). Modelo `base` descargado en tiempo de build.
-- Timestamps mostrados en horario de Madrid (Europe/Madrid), duraciones formateadas como `Xm Ys`.
-- CSS adaptativo a modo claro/oscuro usando variables nativas de Streamlit (`var(--background-color)`, `var(--primary-color)`, etc.).
-- Tarjetas Manchester con `rgba()` al 12% de opacidad — funcionan en ambos modos sin selectores de tema.
-
-**FastAPI** — http://localhost:8000/docs:
-
-| Endpoint | Descripción |
-|---|---|
-| `POST /fase3/predict` | Recibe texto, llama a Mistral, predice con ML, guarda en Postgres |
-| `GET /fase3/entrevista/{guid}` | Devuelve JSON enriquecido de un caso |
-| `GET /metricas/stats` | KPIs del pipeline |
-| `GET /metricas/historial` | Últimos N casos con sus timestamps |
-
----
-
-## Estructura del proyecto
+## Estructura del repositorio
 
 ```
 proyecto_sistema_de_triajes/
-├── dags/
-│   ├── pipeline/               # Módulos compartidos por los DAGs
-│   │   ├── config.py           # Variables de entorno centralizadas
-│   │   ├── parser.py           # Lee archivos .info y reconstruye conversaciones
-│   │   ├── prompts.py          # System prompt few-shot para Mistral (Manchester)
-│   │   ├── llm.py              # Cliente HTTP Mistral con timing
-│   │   ├── db.py               # DatabaseService (crear/actualizar entrevista)
-│   │   └── minio_client.py     # Operaciones sobre MinIO
-│   ├── dag_ingestion.py        # Fase 1 - Paso 1
-│   ├── dag_llm_enrichment.py   # Fase 1 - Paso 2
-│   ├── dag_model_training.py   # Fase 1 - Paso 3 (TF-IDF + LogReg)
-│   ├── dag_prediction_phase_2.py  # Fase 2 - Predicción sobre audios
-│   └── dag_evaluation.py       # Fase 2 - Valoración del modelo
-├── services/
-│   ├── airflow/                # Dockerfile de Airflow con dependencias Python
-│   ├── api/                    # FastAPI — predicción y métricas
-│   │   ├── routes/
-│   │   │   ├── fase3.py        # POST /fase3/predict, GET /fase3/entrevista/{guid}
-│   │   │   └── metricas.py     # GET /metricas/stats, GET /metricas/historial
-│   │   └── services/
-│   │       ├── db.py           # DatabaseService para la API
-│   │       └── minio_service.py
-│   └── frontend/               # Streamlit + Whisper
-│       ├── app.py              # Dashboard 4 pestañas
-│       ├── .streamlit/
-│       │   └── config.toml     # primaryColor azul, permite dark/light nativo
-│       └── components/
-│           ├── db_queries.py   # Consultas cacheadas a Postgres
-│           └── minio_helpers.py
+├── README.md
+├── docker-compose.yml
+├── .env.example                       ← copia a .env y rellena MISTRAL_API_KEY
+│
+├── dags/                              ← DAGs de Airflow
+│   ├── dag_ingestion.py
+│   ├── dag_llm_enrichment.py
+│   └── pipeline/
+│       ├── config.py
+│       ├── db.py
+│       ├── diccionario_clinico.py     ← 25 entidades estándar + mapeo
+│       ├── llm.py                      ← cliente Mistral
+│       ├── minio_client.py
+│       ├── parser.py                   ← parser de .info
+│       └── prompts.py                  ← SYSTEM_PROMPT para Fase 1
+│
+├── data/
+│   ├── raw/                            ← medical_train.info, medical_test.info
+│   └── processed/
+│       ├── conversaciones.csv          ← 270 entrevistas ordenadas
+│       ├── dataset_entrenamiento.csv   ← features para Orange
+│       └── analisis_entidades.txt      ← stats del diccionario
+│
+├── models/
+│   └── randomforest_model.pkcls        ← modelo entrenado en Orange
+│
 ├── infra/
 │   └── postgres/
 │       ├── 01_create_databases.sh
-│       └── 02_schema.sql
-├── data/
-│   ├── raw/                    # Fase 1 — .info para entrenamiento
-│   │   ├── medical_train.info
-│   │   └── medical_test.info
-│   └── audios/                 # Fase 2 — audios nuevos (mp3, wav, m4a, …)
-├── docker-compose.yml
-└── .env
+│       └── 02_schema.sql               ← tabla entrevista
+│
+└── services/
+    ├── airflow/                        ← Dockerfile Airflow
+    ├── api/                            ← FastAPI
+    │   ├── main.py
+    │   ├── config.py
+    │   ├── routes/fase3.py
+    │   └── services/{db.py, minio_service.py}
+    └── frontend/                       ← Streamlit
+        ├── app.py
+        └── components/
+            ├── db_queries.py
+            └── minio_helpers.py
 ```
 
 ---
 
-## Variables de entorno (.env)
+## Setup inicial
+
+### 1. Clonar el repo
+
+```bash
+git clone <url>
+cd proyecto_sistema_de_triajes
+```
+
+### 2. Configurar variables de entorno
+
+```bash
+cp .env.example .env
+```
+
+Rellenar `MISTRAL_API_KEY` con tu clave (gratis en https://console.mistral.ai).
+
+### 3. Levantar todo
+
+```bash
+docker compose up -d --build
+```
+
+Esto arranca: PostgreSQL · MinIO · Airflow (init + webserver + scheduler) · API · Frontend.
+
+### 4. Acceder a las interfaces
+
+| Servicio | URL | Credenciales |
+|---|---|---|
+| Frontend Streamlit | http://localhost:8501 | — |
+| API docs (Swagger) | http://localhost:8000/docs | — |
+| Airflow UI | http://localhost:8080 | admin / admin |
+| MinIO Console | http://localhost:9001 | minioadmin / minioadmin |
+| PostgreSQL | localhost:**5433** | triageia / triageia |
+
+---
+
+## Uso del sistema
+
+### A) Generar el dataset (primera vez)
+
+1. Coloca `medical_train.info` y `medical_test.info` en `data/raw/`
+2. En Airflow UI lanza el DAG `dag_ingestion` (esto disparará `dag_llm_enrichment` automáticamente al terminar)
+3. Espera ~5-10 minutos (Mistral procesa 270 conversaciones)
+4. Comprueba que aparecen los CSV en `data/processed/`:
+   - `conversaciones.csv`
+   - `dataset_entrenamiento.csv`
+
+### B) Entrenar el modelo en Orange Data Mining
+
+1. Instalar [Orange Data Mining](https://orangedatamining.com/)
+2. Abrir Orange y montar el workflow:
+   - **File** → cargar `data/processed/dataset_entrenamiento.csv`
+   - En la tabla de columnas marcar `etiqueta` como **target**
+   - **Continuize** → One-hot encoding para `entidad_principal` y `categoria`, Keep categorical para `etiqueta`
+   - **Random Forest** (200 árboles, Balance class distribution ✓)
+   - **Test & Score** → Cross validation 5 folds (Stratified OFF si hay clases con <5 muestras)
+   - **Confusion Matrix** y **ROC Analysis** para validar
+   - **Save Model** → guardar como `models/randomforest_model.pkcls`
+3. Guardar el workflow como `triagle.ows` por si hay que reentrenar
+
+### C) Hacer predicciones
+
+1. Abrir http://localhost:8501
+2. Pestaña **🩺 Nuevo Triaje**
+3. Subir un audio en español (MP3, WAV, M4A, OGG)
+4. Pulsar **🔬 Analizar audio**
+5. Ver el banner Manchester con la predicción + tiempos por fase
+
+### D) Consultar el historial
+
+Pestaña **📋 Historial** → tabla con todas las predicciones (con filtro por GUID) + detalle al seleccionar un caso (incluye tabla de tiempos por fase).
+
+---
+
+## Workflow de Orange Data Mining
+
+```
+┌──────┐    ┌────────────┐    ┌──────────────┐    ┌─────────────┐
+│ File ├───▶│ Continuize ├──┬▶│  Test&Score  │◀───┤RandomForest │
+└──────┘    └────────────┘  │ └──────┬───────┘    └──────┬──────┘
+                            │        │                   │
+                            │        ▼                   │
+                            │ ┌──────────────┐           │
+                            │ │Confusion Mtx │           │
+                            │ └──────────────┘           │
+                            │                            ▼
+                            │                    ┌──────────────┐
+                            └───────────────────▶│  Save Model  │
+                                                 └──────────────┘
+```
+
+**Por qué Orange en lugar de sklearn directo:**
+
+Permite comparar visualmente varios modelos (Random Forest, Logistic Regression, SVM, kNN…) y sus métricas, matrices de confusión y curvas ROC sin escribir código. El modelo ganador se exporta como `.pkcls`; la API y el Frontend lo cargan vía la librería `Orange3` de Python (instalada en sus contenedores).
+
+---
+
+## Diccionario clínico
+
+Para evitar la dispersión semántica del LLM (que generaba ~539 etiquetas únicas para 270 casos), se aplica un **diccionario clínico** que reduce a **20 entidades estándar**, organizadas por prioridad Manchester:
+
+```
+Prioridad 1 (signos vitales — sospecha C1/C2)
+  Disnea · Dolor_Torácico · Síncope · Hemoptisis
+
+Prioridad 2 (urgentes — C2/C3)
+  Sibilancias · Palpitaciones · Dolor_Abdominal · Fiebre · Mareo
+
+Prioridad 3 (comunes — C3/C4)
+  Tos · Náuseas_Vómitos · Cefalea · Diarrea · Edema · Odinofagia ·
+  Congestión_Respiratoria
+
+Prioridad 4 (leves — C4/C5)
+  Fatiga · Dolor_Musculoesquelético · Anosmia · Traumatismo
+```
+
+Cada caso se queda con **la entidad de mayor prioridad** (la más grave) y es esa la que se one-hot encodea para el modelo. Ver `dags/pipeline/diccionario_clinico.py` (cubre sinónimos como "alteración_conciencia" → `Síncope`, "erupción_cutánea" → `Traumatismo`, "sudoración_nocturna" → `Fiebre`, etc.).
+
+**Estadísticas del análisis** (en `data/processed/analisis_entidades.txt`):
+
+```
+Casos analizados:                270
+Entidades crudas únicas:         539  ← lo que devolvía Mistral
+Entidades estándar:               20  ← después del diccionario
+Casos sin entidad mapeable:       12 (4.4%)
+```
+
+---
+
+## Esquema de la base de datos
+
+La tabla **`entrevista`** (PostgreSQL) solo registra **predicciones en
+tiempo real** de Fase 3 (audios subidos desde el frontend o llamadas REST a
+la API). Los DAGs de Fase 1 NO escriben aquí.
+
+```sql
+guid_entrevista              VARCHAR(255) PRIMARY KEY
+url_texto_original           VARCHAR(500)
+url_modelo_entrenado         VARCHAR(500)
+motor_workflow               VARCHAR(50)   -- 'API'   (predicciones de Fase 3)
+estado                       VARCHAR(50)   -- 'PREDICIENDO' | 'PREDICCION_COMPLETADA' | 'ERROR'
+
+-- Timestamps por fase del pipeline:
+inicio_solicitud             TIMESTAMP
+fin_solicitud                TIMESTAMP
+inicio_preprocesamiento      TIMESTAMP     -- Whisper inicio
+fin_preprocesamiento         TIMESTAMP     -- Whisper fin
+inicio_extraccion_entidades  TIMESTAMP     -- Mistral inicio
+fin_extraccion_entidades     TIMESTAMP     -- Mistral fin
+inicio_score                 TIMESTAMP
+fin_score                    TIMESTAMP
+inicio_entrenamiento         TIMESTAMP     -- en Fase 3 = inicio predict ML
+fin_entrenamiento            TIMESTAMP     -- fin predict ML
+```
+
+Cada predicción crea una fila y se va actualizando con los timestamps a lo largo del pipeline.
+
+---
+
+## Servicios y puertos
+
+| Contenedor | Puerto host | Función |
+|---|---|---|
+| `triageia_postgres` | **5433** | PostgreSQL (db `triageia`) |
+| `triageia_minio` | 9000 / 9001 | S3 storage / Console UI |
+| `triageia_airflow_webserver` | 8080 | Airflow UI (admin/admin) |
+| `triageia_airflow_scheduler` | — | Ejecuta DAGs |
+| `triageia_api` | 8000 | FastAPI (Swagger en `/docs`) |
+| `triageia_frontend` | 8501 | Streamlit |
+| `triageia_grafana` | 3000 | Dashboard de tiempos por fase |
+
+---
+
+## Variables de entorno
+
+Fichero `.env` (copia `.env.example` y rellena `MISTRAL_API_KEY`):
 
 ```env
-MISTRAL_API_KEY=tu_api_key_aqui
+MISTRAL_API_KEY=tu_clave_de_mistral_aqui
+
 POSTGRES_DB=triageia
 POSTGRES_USER=triageia
 POSTGRES_PASSWORD=triageia
+
 MINIO_ROOT_USER=minioadmin
 MINIO_ROOT_PASSWORD=minioadmin
 ```
 
+> Las credenciales de Airflow UI (`admin / admin`) están hardcoded en
+> `docker-compose.yml` y no se configuran por env var.
+
 ---
 
-## Dataset
+## Notas técnicas
 
-Fareez et al. (2022). *A dataset of simulated patient-physician medical interviews.*
-Nature Scientific Data. [Paper](https://www.nature.com/articles/s41597-022-01423-1)
+- **Whisper** descarga el modelo `base` (~140 MB) la primera vez que se usa
+- **Orange3** se instala en los contenedores de API y Frontend (~500 MB de dependencias) para poder cargar el `.pkcls`
+- El modelo `.pkcls` puede dar **warnings de versión de sklearn** al cargarse (Orange Desktop usa una versión ligeramente distinta), pero funciona correctamente
+- Los buckets de MinIO (`audios`, `textos`, `enriquecidos`, `datasets`) se crean automáticamente al arrancar
+- El frontend monta `./models:/app/models:ro` para detectar automáticamente cualquier `.pkcls` que guardes desde Orange en esa carpeta
 
-270 entrevistas con transcripción válida (de 272 en el paper original):
+---
 
-| Categoría | Casos | Descripción |
-|---|---|---|
-| RES | 211 | Respiratorio — asma, neumonía, gripe |
-| MSK | 46 | Musculoesquelético — esguinces, lumbago, gota |
-| GAS | 6 | Gastrointestinal — gastroenteritis, apendicitis |
-| CAR | 5 | Cardíaco crítico — angina, infarto |
-| DER | 1 | Dermatológico |
-| GEN | 1 | General |
+## Créditos
 
-Distribución de niveles Manchester asignados por Mistral (ground truth del dataset):
-
-| Nivel | Casos | Nota |
-|---|---|---|
-| C1 | 1 | Insuficiente para aprender esta clase |
-| C2 | 30 | |
-| C3 | 70 | |
-| C4 | 111 | Clase mayoritaria |
-| C5 | 58 | |
+- Dataset: **Fareez et al. — OSCE clinical interviews** (270 casos)
+- Protocolo: **Manchester Triage System (MTS)**
+- Proyecto académico: TriageIA — CES IA-BD 25/26

@@ -1,10 +1,12 @@
 fastapi
 uvicorn[standard]
-scikit-learn
+python-multipart
+scikit-learn==1.5.2
 pandas
 numpy
 joblib
 httpx
-imbalanced-learn
 psycopg2-binary
 minio
+Orange3
+openai-whisper
