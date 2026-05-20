@@ -46,6 +46,43 @@ _ESPERA_INICIAL_429   = 15
 # Helpers de parseo y validación                                       #
 # ------------------------------------------------------------------ #
 
+def _fix_string_newlines(text: str) -> str:
+    """Escapa saltos de línea y tabs crudos dentro de strings JSON.
+
+    Mistral ocasionalmente genera strings multi-línea sin escapar los \\n,
+    lo que produce JSON estructuralmente inválido.
+    """
+    result = []
+    in_string = False
+    i = 0
+    while i < len(text):
+        c = text[i]
+        if in_string:
+            if c == "\\":
+                result.append(c)
+                if i + 1 < len(text):
+                    result.append(text[i + 1])
+                    i += 2
+                    continue
+            elif c == '"':
+                in_string = False
+                result.append(c)
+            elif c == "\n":
+                result.append("\\n")
+            elif c == "\r":
+                result.append("\\r")
+            elif c == "\t":
+                result.append("\\t")
+            else:
+                result.append(c)
+        else:
+            if c == '"':
+                in_string = True
+            result.append(c)
+        i += 1
+    return "".join(result)
+
+
 def _extraer_json(texto: str) -> dict:
     """Intenta parsear JSON directo; si falla limpia markdown y reintenta."""
     try:
@@ -53,15 +90,20 @@ def _extraer_json(texto: str) -> dict:
     except json.JSONDecodeError:
         pass
     # Mistral a veces envuelve en bloques ```json … ```
-    sin_md = re.sub(r"```(?:json)?\s*", "", texto).strip()
+    sin_md = re.sub(r"```(?:json)?", "", texto).strip()
     try:
         return json.loads(sin_md)
+    except json.JSONDecodeError:
+        pass
+    # Mistral a veces pone saltos de línea crudos dentro de strings JSON
+    try:
+        return json.loads(_fix_string_newlines(sin_md))
     except json.JSONDecodeError:
         pass
     match = re.search(r"\{.*\}", sin_md, re.DOTALL)
     if match:
         try:
-            return json.loads(match.group())
+            return json.loads(_fix_string_newlines(match.group()))
         except json.JSONDecodeError:
             pass
     raise ValueError(f"JSON inválido en respuesta LLM: {texto[:200]}")
