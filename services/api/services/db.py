@@ -14,7 +14,7 @@ class DatabaseService:
         return psycopg2.connect(self._url)
 
     # ------------------------------------------------------------------ #
-    # Escritura — predicción Fase 2                                        #
+    # Escritura — predicción Fase 3                                        #
     # ------------------------------------------------------------------ #
 
     def crear_prediccion(self, guid: str, url_audio: str) -> None:

@@ -95,15 +95,15 @@ Respuesta:
   "score_ansiedad": 0.95
 }
 
-### Ejemplo 4 — C4 musculoesquelético
-Transcripción: "I twisted my ankle playing football yesterday. It's swollen and it hurts when I walk but I can still put some weight on it. No other symptoms."
+### Ejemplo 4 — C5 musculoesquelético
+Transcripción: "I've had some mild lower back pain on and off for months now. It's a 2 out of 10 at most. I take ibuprofen when it flares up and it usually helps. No other symptoms, I just wanted to get it checked out."
 Respuesta:
 {
-  "resumen_es": "Paciente con traumatismo en tobillo tras accidente deportivo. Dolor local con capacidad de carga parcial conservada.",
-  "entidades_extraidas": ["twisted ankle", "swollen", "pain when walking"],
+  "resumen_es": "Paciente con dolor lumbar leve crónico intermitente de meses de evolución. Sin signos de alarma ni síntomas sistémicos asociados. Buen control con antiinflamatorios.",
+  "entidades_extraidas": ["mild lower back pain on and off for months", "2 out of 10", "ibuprofen helps"],
   "entidades_normalizadas": ["Dolor_Musculoesquelético"],
-  "triage_real": "C4",
-  "justificacion": "Esguince de tobillo con dolor moderado. Capacidad de carga parcial conservada, sin signos de fractura evidente. Manchester C4: Menos Urgente.",
+  "triage_real": "C5",
+  "justificacion": "Dolor lumbar crónico leve sin signos de alarma sistémica ni limitación funcional significativa. Control adecuado con antiinflamatorios. Manchester C5: No Urgente.",
   "score_ansiedad": 0.1
 }
 """

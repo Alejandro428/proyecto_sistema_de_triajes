@@ -59,15 +59,15 @@ MAPEO_ENTIDADES = {
     "náuseas/vómitos": "Náuseas_Vómitos", "arcadas": "Náuseas_Vómitos",
     "regurgitación": "Náuseas_Vómitos",
 
-    # ── Tos (3) ───────────────────────────────────────────────────────────
+    # ── Tos (4) ───────────────────────────────────────────────────────────
     "tos": "Tos", "tos seca": "Tos", "tos crónica": "Tos",
     "tos persistente": "Tos", "tos productiva": "Tos",
 
-    # ── Fatiga (4) ────────────────────────────────────────────────────────
+    # ── Fatiga (5) ────────────────────────────────────────────────────────
     "fatiga": "Fatiga", "cansancio": "Fatiga", "astenia": "Fatiga",
     "debilidad": "Fatiga", "letargo": "Fatiga",
 
-    # ── Dolor musculoesquelético (4) ──────────────────────────────────────
+    # ── Dolor musculoesquelético (5) ──────────────────────────────────────
     "dolor musculoesquelético": "Dolor_Musculoesquelético",
     "dolor muscular": "Dolor_Musculoesquelético",
     "dolor articular": "Dolor_Musculoesquelético",

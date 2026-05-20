@@ -7,16 +7,7 @@ venv/
 # Environment — never commit real keys
 .env
 
-# Trained model binaries (keep the folder via .gitkeep)
-models/*
-!models/.gitkeep
-
-# Processed data (generated, not source)
-data/processed/
-data/audio/
-data/audios/
-
-# Orange Data Mining temporary files
+# Orange Data Mining temporary/swap files only (keep .ows and .pkcls)
 *.ows.swp*
 
 # Jupyter checkpoints
