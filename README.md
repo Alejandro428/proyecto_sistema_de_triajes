@@ -62,9 +62,9 @@ Sistema que clasifica entrevistas clínicas en niveles de prioridad **Manchester
 │  Usuario sube audio                                                 │
 │         │                                                           │
 │   1. Whisper          → transcripción                              │
-│   2. Mistral (LLM)    → entidades, categoría, score_ansiedad       │
+│   2. Mistral (LLM)    → 2-5 entidades, categoría, score_ansiedad   │
 │                         (NO predice triaje)                         │
-│   3. diccionario      → entidad_principal (la más grave)            │
+│   3. diccionario      → entidades normalizadas + n_sintomas         │
 │   4. Random Forest    → predicción C1-C5                            │
 │                                                                     │
 │   Tiempos por fase → PostgreSQL                                     │
@@ -86,9 +86,9 @@ Sistema que clasifica entrevistas clínicas en niveles de prioridad **Manchester
 2. **`dag_llm_enrichment`** (se lanza automáticamente al terminar el anterior):
    - Por cada conversación llama a la API de Mistral con el prompt clínico
    - Mistral devuelve `entidades_extraidas`, `entidades_normalizadas`, `triage_real`, `score_ansiedad`, `resumen_es`, `justificacion`
-   - Aplica el **diccionario clínico** (`pipeline/diccionario_clinico.py`) que reduce las ~539 etiquetas crudas que devuelve el LLM a las **20 entidades estándar** del vocabulario y se queda con la más grave
+   - Aplica el **diccionario clínico** (`pipeline/diccionario_clinico.py`) que reduce las ~539 etiquetas crudas que devuelve el LLM a las **20 entidades estándar** del vocabulario (hasta 5 por caso, ordenadas por gravedad)
    - Cada JSON enriquecido se guarda en MinIO (`enriquecidos/{guid}.json`) — es idempotente, si ya existe se salta
-   - Genera **`dataset_entrenamiento.csv`** con 5 columnas: `entidad_principal`, `resumen`, `categoria`, `score_ansiedad`, `etiqueta`
+   - Genera **`dataset_entrenamiento.csv`** con 5 columnas: `entidades_normalizadas` (texto, espacio-separado), `n_sintomas`, `categoria`, `score_ansiedad`, `etiqueta`
 
 > Los DAGs **no escriben en Postgres**: los datos del entrenamiento solo viven
 > en MinIO y en `data/processed/`. La tabla `entrevista` se reserva
@@ -113,9 +113,9 @@ El frontend Streamlit tiene **2 pestañas**:
 
 El flujo interno:
 1. **Whisper** transcribe el audio (modelo `base`, español)
-2. **Mistral** extrae entidades + categoría + score_ansiedad (NO clasifica)
-3. Diccionario clínico filtra a **una sola entidad de mayor prioridad**
-4. **Random Forest de Orange** predice C1-C5
+2. **Mistral** extrae 2-5 entidades + categoría + score_ansiedad (NO clasifica)
+3. Diccionario clínico normaliza las entidades y calcula `n_sintomas`
+4. **Random Forest de Orange** predice C1-C5 (multi-hot por entidad + n_sintomas + categoría + score)
 5. Cada fase queda registrada con timestamps en PostgreSQL
 
 ---
@@ -149,8 +149,7 @@ proyecto_sistema_de_triajes/
 │   ├── dag_llm_enrichment.py
 │   └── pipeline/
 │       ├── config.py
-│       ├── db.py
-│       ├── diccionario_clinico.py     ← 25 entidades estándar + mapeo
+│       ├── diccionario_clinico.py     ← 20 entidades estándar + mapeo
 │       ├── llm.py                      ← cliente Mistral
 │       ├── minio_client.py
 │       ├── parser.py                   ← parser de .info
@@ -166,11 +165,6 @@ proyecto_sistema_de_triajes/
 ├── models/
 │   └── randomforest_model.pkcls        ← modelo entrenado en Orange
 │
-├── infra/
-│   └── postgres/
-│       ├── 01_create_databases.sh
-│       └── 02_schema.sql               ← tabla entrevista
-│
 └── services/
     ├── airflow/                        ← Dockerfile Airflow
     ├── api/                            ← FastAPI
@@ -178,11 +172,17 @@ proyecto_sistema_de_triajes/
     │   ├── config.py
     │   ├── routes/fase3.py
     │   └── services/{db.py, minio_service.py}
-    └── frontend/                       ← Streamlit
-        ├── app.py
-        └── components/
-            ├── db_queries.py
-            └── minio_helpers.py
+    ├── frontend/                       ← Streamlit
+    │   ├── app.py
+    │   └── components/
+    │       ├── db_queries.py
+    │       └── minio_helpers.py
+    ├── postgres/                       ← scripts init BD
+    │   ├── 01_create_databases.sh
+    │   └── 02_schema.sql               ← tabla entrevista
+    └── grafana/                        ← dashboards + datasource
+        ├── dashboards/triageia.json
+        └── provisioning/{dashboards,datasources}/
 ```
 
 ---
@@ -240,8 +240,10 @@ Esto arranca: PostgreSQL · MinIO · Airflow (init + webserver + scheduler) · A
 1. Instalar [Orange Data Mining](https://orangedatamining.com/)
 2. Abrir Orange y montar el workflow:
    - **File** → cargar `data/processed/dataset_entrenamiento.csv`
-   - En la tabla de columnas marcar `etiqueta` como **target**
-   - **Continuize** → One-hot encoding para `entidad_principal` y `categoria`, Keep categorical para `etiqueta`
+   - En la tabla de columnas marcar `etiqueta` como **target** y `entidades_normalizadas` como **text** (string)
+   - **Corpus** → convierte `entidades_normalizadas` en corpus de texto
+   - **Bag of Words Binary** → genera una feature binaria por cada entidad clínica (multi-hot)
+   - **Continuize** → One-hot encoding para `categoria` (deja `n_sintomas` y `score_ansiedad` como numéricas)
    - **Random Forest** (200 árboles, Balance class distribution ✓)
    - **Test & Score** → Cross validation 5 folds (Stratified OFF si hay clases con <5 muestras)
    - **Confusion Matrix** y **ROC Analysis** para validar
@@ -304,7 +306,7 @@ Prioridad 4 (leves — C4/C5)
   Fatiga · Dolor_Musculoesquelético · Anosmia · Traumatismo
 ```
 
-Cada caso se queda con **la entidad de mayor prioridad** (la más grave) y es esa la que se one-hot encodea para el modelo. Ver `dags/pipeline/diccionario_clinico.py` (cubre sinónimos como "alteración_conciencia" → `Síncope`, "erupción_cutánea" → `Traumatismo`, "sudoración_nocturna" → `Fiebre`, etc.).
+Cada caso se queda con **hasta 5 entidades**, ordenadas por gravedad (la primera es la principal). En el dataset se almacenan como texto separado por espacios y Orange genera el multi-hot binario con el widget *Bag of Words Binary*. Ver `dags/pipeline/diccionario_clinico.py` (cubre sinónimos como "alteración_conciencia" → `Síncope`, "erupción_cutánea" → `Traumatismo`, "sudoración_nocturna" → `Fiebre`, etc.).
 
 **Estadísticas del análisis** (en `data/processed/analisis_entidades.txt`):
 
@@ -387,7 +389,7 @@ MINIO_ROOT_PASSWORD=minioadmin
 - **Orange3** se instala en los contenedores de API y Frontend (~500 MB de dependencias) para poder cargar el `.pkcls`
 - El modelo `.pkcls` puede dar **warnings de versión de sklearn** al cargarse (Orange Desktop usa una versión ligeramente distinta), pero funciona correctamente
 - Los buckets de MinIO (`audios`, `textos`, `enriquecidos`, `datasets`) se crean automáticamente al arrancar
-- El frontend monta `./models:/app/models:ro` para detectar automáticamente cualquier `.pkcls` que guardes desde Orange en esa carpeta
+- La API monta `./models:/app/models` para detectar automáticamente cualquier `.pkcls` que guardes desde Orange en esa carpeta (hot-reload por `mtime`)
 
 ---
 

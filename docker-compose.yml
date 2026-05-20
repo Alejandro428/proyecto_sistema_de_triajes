@@ -35,7 +35,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-triageia}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./infra/postgres:/docker-entrypoint-initdb.d
+      - ./services/postgres:/docker-entrypoint-initdb.d
     networks:
       - triageia_net
     restart: unless-stopped
@@ -116,8 +116,10 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./models:/app/models
+      # El bind más genérico va primero; el más anidado (/app/models) después
+      # para que coexistan sin que el segundo oculte al primero.
       - ./services/api:/app
+      - ./models:/app/models
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-triageia}:${POSTGRES_PASSWORD:-triageia}@postgres:5432/${POSTGRES_DB:-triageia}
       MINIO_ENDPOINT: minio:9000
@@ -144,8 +146,8 @@ services:
       GF_INSTALL_PLUGINS: ""
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./services/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./services/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       postgres:
         condition: service_healthy
