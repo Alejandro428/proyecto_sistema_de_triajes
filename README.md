@@ -102,7 +102,7 @@ El entrenamiento se hace **fuera de Docker**, en Orange Desktop, porque:
 - Genera matrices de confusión, ROC, métricas, etc.
 - El profesor puede ver el workflow visual
 
-El modelo resultante (`randomforest_model.pkcls`) se guarda en `models/` y la API/Frontend lo detectan automáticamente.
+El modelo resultante (`randomforest_model.pkcls`) se guarda en **`./models/`** (carpeta en la raíz del proyecto). Docker monta esa carpeta como `/app/models` dentro del contenedor de la **API** (ver `docker-compose.yml`). La API detecta automáticamente cualquier `.pkcls` nuevo o modificado y lo recarga sin reiniciar (hot-reload por `mtime`). El frontend NO carga el modelo: solo llama al endpoint `/fase3/predecir`.
 
 ### Fase 3 — Predicción en producción (Streamlit)
 
@@ -247,8 +247,26 @@ Esto arranca: PostgreSQL · MinIO · Airflow (init + webserver + scheduler) · A
    - **Random Forest** (200 árboles, Balance class distribution ✓)
    - **Test & Score** → Cross validation 5 folds (Stratified OFF si hay clases con <5 muestras)
    - **Confusion Matrix** y **ROC Analysis** para validar
-   - **Save Model** → guardar como `models/randomforest_model.pkcls`
-3. Guardar el workflow como `triagle.ows` por si hay que reentrenar
+   - **Save Model** → guardar el `.pkcls` en la carpeta **`./models/`** de la raíz del proyecto (la misma carpeta donde está `randomforest_model.pkcls`).
+3. Guardar el workflow como `triagle.ows` por si hay que reentrenar.
+
+> **¿Dónde se guarda el modelo y cómo lo ve la API?**
+>
+> - **En tu PC (host):** la carpeta es **`./models/`** en la raíz del repo
+>   (junto a `docker-compose.yml`). NO existe ninguna carpeta `models/`
+>   dentro de `services/api/`; el contenedor la "ve" porque Docker hace
+>   un *bind mount*.
+> - **Dentro del contenedor de la API:** aparece como `/app/models` gracias
+>   a esta línea de `docker-compose.yml`:
+>   ```yaml
+>   volumes:
+>     - ./models:/app/models
+>   ```
+> - **Hot-reload:** la API revisa el `mtime` de cada `.pkcls` en cada
+>   predicción y carga automáticamente el más reciente. No necesitas
+>   reiniciar nada: dejas el nuevo `.pkcls` en `./models/` y listo.
+> - Puedes mantener `.pkcls` antiguos en la carpeta como backup; la API
+>   siempre usa el de `mtime` más reciente.
 
 ### C) Hacer predicciones
 
@@ -283,7 +301,7 @@ Pestaña **📋 Historial** → tabla con todas las predicciones (con filtro por
 
 **Por qué Orange en lugar de sklearn directo:**
 
-Permite comparar visualmente varios modelos (Random Forest, Logistic Regression, SVM, kNN…) y sus métricas, matrices de confusión y curvas ROC sin escribir código. El modelo ganador se exporta como `.pkcls`; la API y el Frontend lo cargan vía la librería `Orange3` de Python (instalada en sus contenedores).
+Permite comparar visualmente varios modelos (Random Forest, Logistic Regression, SVM, kNN…) y sus métricas, matrices de confusión y curvas ROC sin escribir código. El modelo ganador se exporta como `.pkcls`; la **API** (FastAPI) lo carga vía la librería `Orange3` de Python (instalada en su contenedor). El frontend Streamlit solo consume el endpoint REST `/fase3/predecir` — no necesita `Orange3`.
 
 ---
 
@@ -386,7 +404,7 @@ MINIO_ROOT_PASSWORD=minioadmin
 ## Notas técnicas
 
 - **Whisper** descarga el modelo `base` (~140 MB) la primera vez que se usa
-- **Orange3** se instala en los contenedores de API y Frontend (~500 MB de dependencias) para poder cargar el `.pkcls`
+- **Orange3** se instala SOLO en el contenedor de la API (~500 MB de dependencias) para poder cargar el `.pkcls`. El frontend NO necesita Orange3.
 - El modelo `.pkcls` puede dar **warnings de versión de sklearn** al cargarse (Orange Desktop usa una versión ligeramente distinta), pero funciona correctamente
 - Los buckets de MinIO (`audios`, `textos`, `enriquecidos`, `datasets`) se crean automáticamente al arrancar
 - La API monta `./models:/app/models` para detectar automáticamente cualquier `.pkcls` que guardes desde Orange en esa carpeta (hot-reload por `mtime`)
