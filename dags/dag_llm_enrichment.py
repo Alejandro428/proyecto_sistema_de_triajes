@@ -68,8 +68,16 @@ def _extraer_json(texto: str) -> dict:
 
 
 def _validar_datos(datos: dict, guid: str) -> None:
-    """Lanza ValueError si faltan campos obligatorios o el nivel es inválido."""
-    for campo in ("triage_real", "entidades_normalizadas", "score_ansiedad"):
+    """Lanza ValueError si faltan campos obligatorios o el nivel es inválido.
+
+    Nota: `entidades_normalizadas` PUEDE ser una lista vacía (caso C5
+    rutinario sin síntomas agudos), pero la clave debe estar presente.
+    """
+    if "entidades_normalizadas" not in datos:
+        raise ValueError(f"{guid}: campo requerido ausente: 'entidades_normalizadas'")
+    if not isinstance(datos["entidades_normalizadas"], list):
+        raise ValueError(f"{guid}: 'entidades_normalizadas' debe ser lista")
+    for campo in ("triage_real", "score_ansiedad"):
         if not datos.get(campo) and datos.get(campo) != 0:
             raise ValueError(f"{guid}: campo requerido vacío: '{campo}'")
     if datos["triage_real"] not in {"C1", "C2", "C3", "C4", "C5"}:

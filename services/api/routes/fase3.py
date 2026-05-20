@@ -60,13 +60,20 @@ Prioridad 3 (común):           Tos, Náuseas_Vómitos, Cefalea, Diarrea, Edema,
 Prioridad 4 (leve):            Fatiga, Dolor_Musculoesquelético, Anosmia, Traumatismo
 
 ## REGLAS PARA `entidades_normalizadas`
-- Devuelve SIEMPRE entre 2 y 5 etiquetas DEL VOCABULARIO cerrado.
-- MÍNIMO 2 etiquetas obligatorio: si el paciente menciona un solo síntoma claro,
-  añade la entidad de apoyo más probable clínicamente
-  (p. ej. Fiebre → añade Fatiga; Dolor_Torácico → añade Disnea).
-- Máximo 5 etiquetas; si hay más síntomas, prioriza los más graves
-  (prioridad 1 > 2 > 3 > 4).
+- En general devuelve entre **2 y 5** etiquetas DEL VOCABULARIO cerrado.
+- Si el paciente menciona un solo síntoma claro, añade la entidad de apoyo
+  más probable clínicamente (p. ej. Fiebre → añade Fatiga;
+  Dolor_Torácico → añade Disnea).
+- Si hay más de 5 síntomas, prioriza los más graves (prioridad 1 > 2 > 3 > 4).
 - Usa SOLO las 20 etiquetas del vocabulario; si un síntoma no encaja, ignóralo.
+
+### EXCEPCIÓN — casos C5 (no urgentes, consulta rutinaria)
+- Si el caso es **claramente C5** (consulta rutinaria, control,
+  síntomas mínimos o ningún síntoma agudo: "vengo a una revisión",
+  "quiero renovar receta", "tengo una pequeña duda", síntoma leve crónico
+  estable…), devuelve **0 o 1 etiqueta** (la lista puede estar vacía).
+- NO inventes una segunda entidad por cumplir la cuota: para los C5 es
+  válido y esperado que `entidades_normalizadas` tenga 0-1 elementos.
 
 ## SCORE_ANSIEDAD — IMPORTANTE
 Estima el nivel de ansiedad/angustia emocional del paciente entre 0.0 y 1.0
@@ -447,27 +454,46 @@ def predecir(req: PredecirRequest):
             from Orange.data import Table
             domain = modelo.domain
             fila   = []
+            # ── Lookups case-insensitive (Orange Bag-of-Words puede aplicar
+            # lowercase a los tokens, generando features como "disnea" en lugar
+            # de "Disnea"). Construimos versiones lower de ambos diccionarios
+            # y del set de entidades activas para que la comparación sea
+            # robusta independientemente del preprocesamiento que se eligió en
+            # Orange. ───────────────────────────────────────────────────────
+            entidades_set_lower  = {e.lower() for e in entidades_set}
+            categoria_req_lower  = (req.categoria or "").lower()
+            diccionario_lower    = {k.lower() for k in DICCIONARIO_PRIORIDAD}
+            # Variantes del token "sin síntomas" que escribe el DAG cuando
+            # el caso es C5 (entidades_normalizadas vacía). Si el modelo lo
+            # tiene como feature, hay que activarla cuando n_sintomas == 0.
+            SIN_SINTOMAS_TOKENS = {"sin_sintomas", "sin sintomas",
+                                   "sin_síntomas", "sin síntomas"}
+
             # Las features del modelo nuevo son una mezcla de:
             #   - Multi-hot por entidad (Orange Corpus → Bag of Words Binary),
             #     donde el nombre de la columna coincide con la etiqueta del
-            #     vocabulario clínico (p. ej. "Disnea", "Dolor_Torácico").
-            #   - One-hot de categoría (Continuize): nombre "categoria=CAR".
+            #     vocabulario clínico (p. ej. "Disnea" o "disnea" si Orange
+            #     aplicó lowercase). Se incluye también el token "Sin_Sintomas"
+            #     que el DAG escribe para casos C5 sin entidades.
+            #   - One-hot de categoría (Continuize): "categoria=CAR".
             #   - Numéricas: "n_sintomas", "score_ansiedad".
-            # Cualquier otra columna (tokens raros como "Sin_Sintomas") se
-            # rellena con 0.0.
             for attr in domain.attributes:
-                name = attr.name
-                if name in DICCIONARIO_PRIORIDAD:
-                    fila.append(1.0 if name in entidades_set else 0.0)
+                name       = attr.name
+                name_lower = name.lower()
+                if name_lower in SIN_SINTOMAS_TOKENS:
+                    # Activa 1.0 SOLO cuando el caso no tiene entidades (C5).
+                    fila.append(1.0 if n_sintomas == 0 else 0.0)
+                elif name_lower in diccionario_lower:
+                    fila.append(1.0 if name_lower in entidades_set_lower else 0.0)
                 elif "=" in name:
                     var, val = name.split("=", 1)
-                    if var == "categoria":
-                        fila.append(1.0 if val == req.categoria else 0.0)
+                    if var.lower() == "categoria":
+                        fila.append(1.0 if val.lower() == categoria_req_lower else 0.0)
                     else:
                         fila.append(0.0)
-                elif name == "score_ansiedad":
+                elif name_lower == "score_ansiedad":
                     fila.append(float(req.score_ansiedad))
-                elif name == "n_sintomas":
+                elif name_lower == "n_sintomas":
                     fila.append(float(n_sintomas))
                 else:
                     fila.append(0.0)

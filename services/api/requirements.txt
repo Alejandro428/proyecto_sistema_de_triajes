@@ -9,4 +9,5 @@ httpx
 psycopg2-binary
 minio
 Orange3
+Orange3-Text
 openai-whisper

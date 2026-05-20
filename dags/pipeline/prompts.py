@@ -25,12 +25,19 @@ Mapea siempre el lenguaje coloquial a estos términos clínicos estándar:
 - "fatigue", "cansancio", "tiredness" → Fatiga → C4 / C5
 
 ## REGLAS PARA `entidades_normalizadas`
-- Devuelve SIEMPRE entre 2 y 5 etiquetas DEL VOCABULARIO en `entidades_normalizadas`.
-- MÍNIMO 2 etiquetas obligatorio: si el paciente menciona un solo síntoma claro,
-  añade la entidad de apoyo más probable clínicamente
-  (p. ej. Fiebre → añade Fatiga; Dolor Torácico → añade Disnea).
+- En general, devuelve entre **2 y 5** etiquetas DEL VOCABULARIO en `entidades_normalizadas`.
+- Si el paciente menciona un solo síntoma claro, añade la entidad de apoyo más
+  probable clínicamente (p. ej. Fiebre → añade Fatiga; Dolor Torácico → añade Disnea).
 - Si hay más de 5 síntomas, prioriza los más graves (prioridad clínica más alta).
 - Usa SOLO términos del vocabulario clínico estándar; ignora síntomas que no encajen.
+
+### EXCEPCIÓN — casos C5 (no urgentes, consulta rutinaria)
+- Si el caso es **claramente C5** (consulta rutinaria, control, síntomas mínimos
+  o ningún síntoma agudo: p. ej. "vengo a una revisión", "quiero renovar
+  receta", "tengo una pequeña duda", síntoma leve crónico estable…),
+  devuelve **0 o 1 etiqueta** en `entidades_normalizadas` (la lista puede estar vacía).
+- NO inventes una segunda entidad por cumplir la cuota: para los C5 es válido
+  y esperado que `entidades_normalizadas` tenga 0-1 elementos.
 
 ## REGLA CRÍTICA
 La clínica siempre prevalece sobre el estado emocional.
