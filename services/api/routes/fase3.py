@@ -3,12 +3,11 @@ Endpoints de predicción Manchester divididos por fase.
 El frontend los llama secuencialmente y muestra progreso entre cada paso.
 
   POST /fase3/transcribir   audio → {guid, transcripcion, tiempo}
-  POST /fase3/extraer       texto → {entidades, categoria, score, tiempo}
+  POST /fase3/extraer       texto → {entidades, categoria, score, resumen, razonamiento, tiempo}
   POST /fase3/predecir      features → {prediccion, tiempo}
 """
 
 import json
-import logging
 import os
 import pickle
 import re
@@ -16,28 +15,23 @@ import tempfile
 import time
 import uuid
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 
 import httpx
 import numpy as np
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from config import DATABASE_URL, MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, MISTRAL_API_KEY
 from services.db import DatabaseService
 from services.minio_service import MinIOService
 
-logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/fase3", tags=["Fase 3 — Predicción"])
 
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
+MISTRAL_MODEL   = "mistral-medium-latest"
 MODELS_DIR      = Path("/app/models")
-
-# Categorías de sistema corporal que entiende el modelo. Si el LLM devuelve
-# otra cosa ("GENERAL", "card", etc.) caemos en "RES" para que el one-hot
-# encoding del modelo no quede todo a cero.
-CATEGORIAS_VALIDAS = {"CAR", "RES", "MSK", "GAS", "GEN", "DER"}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -45,35 +39,24 @@ CATEGORIAS_VALIDAS = {"CAR", "RES", "MSK", "GAS", "GEN", "DER"}
 # ─────────────────────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """Eres un asistente clínico que EXTRAE features de una entrevista médica transcrita.
-NO clasifiques el caso en niveles Manchester C1-C5: esa clasificación la realiza
-un modelo de Machine Learning por separado. Sí debes describir clínicamente
-el caso (resumen + justificación de gravedad) para que el médico lo lea.
+NO clasifiques el caso en niveles Manchester. La clasificación C1-C5 la realiza un modelo de Machine Learning.
 
 ## CATEGORÍAS DE SISTEMA CORPORAL
 CAR (cardiovascular), RES (respiratorio), MSK (musculoesquelético),
 GAS (gastrointestinal), GEN (general), DER (dermatológico).
 
-## VOCABULARIO CLÍNICO CERRADO — 20 ETIQUETAS
-Prioridad 1 (alarma vital):    Disnea, Dolor_Torácico, Síncope, Hemoptisis
-Prioridad 2 (urgente):         Sibilancias, Palpitaciones, Dolor_Abdominal, Fiebre, Mareo
-Prioridad 3 (común):           Tos, Náuseas_Vómitos, Cefalea, Diarrea, Edema, Odinofagia, Congestión_Respiratoria
-Prioridad 4 (leve):            Fatiga, Dolor_Musculoesquelético, Anosmia, Traumatismo
+## VOCABULARIO CLÍNICO CERRADO — 10 ETIQUETAS
+Prioridad 1 (alarma vital):    Disnea, Dolor_Torácico
+Prioridad 2 (urgente):         Fiebre, Dolor_Abdominal, Palpitaciones
+Prioridad 3 (común):           Cefalea, Náuseas_Vómitos
+Prioridad 4 (leve):            Tos
+Prioridad 5 (no urgente):      Fatiga, Dolor_Musculoesquelético
 
-## REGLAS PARA `entidades_normalizadas`
-- En general devuelve entre **2 y 5** etiquetas DEL VOCABULARIO cerrado.
-- Si el paciente menciona un solo síntoma claro, añade la entidad de apoyo
-  más probable clínicamente (p. ej. Fiebre → añade Fatiga;
-  Dolor_Torácico → añade Disnea).
-- Si hay más de 5 síntomas, prioriza los más graves (prioridad 1 > 2 > 3 > 4).
-- Usa SOLO las 20 etiquetas del vocabulario; si un síntoma no encaja, ignóralo.
-
-### EXCEPCIÓN — casos C5 (no urgentes, consulta rutinaria)
-- Si el caso es **claramente C5** (consulta rutinaria, control,
-  síntomas mínimos o ningún síntoma agudo: "vengo a una revisión",
-  "quiero renovar receta", "tengo una pequeña duda", síntoma leve crónico
-  estable…), devuelve **0 o 1 etiqueta** (la lista puede estar vacía).
-- NO inventes una segunda entidad por cumplir la cuota: para los C5 es
-  válido y esperado que `entidades_normalizadas` tenga 0-1 elementos.
+REGLAS:
+- Devuelve entre 1 y 5 etiquetas DEL VOCABULARIO en `entidades_normalizadas`.
+- Si hay más de 5 síntomas, prioriza los más graves (prioridad 1 > 2 > 3 > 4 > 5).
+- Si no se detecta ningún síntoma claro, devuelve una lista vacía [].
+- Usa SOLO etiquetas del vocabulario; ignora síntomas que no encajen.
 
 ## SCORE_ANSIEDAD — IMPORTANTE
 Estima el nivel de ansiedad/angustia emocional del paciente entre 0.0 y 1.0
@@ -91,19 +74,15 @@ Guía de estimación:
 
 ## FORMATO DE SALIDA
 Devuelve ÚNICAMENTE un JSON válido, sin texto adicional.
-Reemplaza el valor de score_ansiedad por tu estimación real (NO copies 0.0).
-"resumen_es" debe ser 2-3 frases en español describiendo los síntomas principales.
-"justificacion" debe explicar brevemente la gravedad clínica observada SIN
-asignar nivel Manchester (eso lo hace el modelo ML).
 
-Ejemplo:
+Ejemplo (paciente con varios síntomas):
 {
-  "resumen_es":            "Paciente con dolor torácico opresivo y disnea de aparición reciente. Refiere miedo intenso. Cuadro compatible con evento cardiovascular agudo.",
-  "entidades_extraidas":   ["dolor en el pecho", "me cuesta respirar", "tengo miedo"],
-  "entidades_normalizadas":["Dolor_Torácico", "Disnea", "Palpitaciones"],
-  "categoria":             "CAR",
-  "score_ansiedad":        0.75,
-  "justificacion":         "Dolor torácico opresivo asociado a disnea sugiere posible isquemia miocárdica."
+  "resumen_es":             "Paciente refiere dolor en el pecho opresivo con dificultad para respirar y sudoración fría.",
+  "entidades_extraidas":    ["dolor en el pecho", "me cuesta respirar", "sudoración fría"],
+  "entidades_normalizadas": ["Dolor_Torácico", "Disnea"],
+  "categoria":              "CAR",
+  "justificacion":          "El síntoma principal es dolor torácico con posible irradiación y disnea asociada, compatible con evento cardiovascular.",
+  "score_ansiedad":         0.75
 }"""
 
 
@@ -112,15 +91,16 @@ Ejemplo:
 # ─────────────────────────────────────────────────────────────────────────────
 
 DICCIONARIO_PRIORIDAD = {
-    "Disnea":                  1, "Dolor_Torácico":          1,
-    "Síncope":                 1, "Hemoptisis":              1,
-    "Sibilancias":             2, "Palpitaciones":           2,
-    "Dolor_Abdominal":         2, "Fiebre":                  2, "Mareo": 2,
-    "Tos":                     3, "Náuseas_Vómitos":         3, "Cefalea": 3,
-    "Diarrea":                 3, "Edema":                   3, "Odinofagia": 3,
-    "Congestión_Respiratoria": 3,
-    "Fatiga":                  4, "Dolor_Musculoesquelético":4,
-    "Anosmia":                 4, "Traumatismo":             4,
+    "Disnea":                   1,
+    "Dolor_Torácico":           1,
+    "Fiebre":                   2,
+    "Dolor_Abdominal":          2,
+    "Palpitaciones":            2,
+    "Cefalea":                  3,
+    "Náuseas_Vómitos":          3,
+    "Tos":                      4,
+    "Fatiga":                   5,
+    "Dolor_Musculoesquelético": 5,
 }
 
 MAPEO = {
@@ -133,73 +113,40 @@ MAPEO = {
     "dolor torácico opresivo":"Dolor_Torácico","dolor en el pecho":"Dolor_Torácico",
     "presión torácica":"Dolor_Torácico","opresión torácica":"Dolor_Torácico",
     "dolor irradiado":"Dolor_Torácico","dolor precordial":"Dolor_Torácico",
-    # Síncope (1)
-    "síncope":"Síncope","pérdida de conciencia":"Síncope","desmayo":"Síncope",
-    "lipotimia":"Síncope","alteración conciencia":"Síncope",
-    "confusión":"Síncope","desorientación":"Síncope",
-    # Hemoptisis (1)
-    "hemoptisis":"Hemoptisis","expectoración hemoptoica":"Hemoptisis",
-    "esputo con sangre":"Hemoptisis","expectoración con sangre":"Hemoptisis",
-    # Sibilancias (2)
-    "sibilancias":"Sibilancias","pitos":"Sibilancias","tos productiva":"Sibilancias",
-    # Palpitaciones (2)
-    "palpitaciones":"Palpitaciones","taquicardia":"Palpitaciones","arritmia":"Palpitaciones",
-    # Dolor abdominal (2)
-    "dolor abdominal":"Dolor_Abdominal","dolor en el abdomen":"Dolor_Abdominal",
-    "epigastralgia":"Dolor_Abdominal","cólico abdominal":"Dolor_Abdominal","dolor pélvico":"Dolor_Abdominal",
     # Fiebre (2)
     "fiebre":"Fiebre","fiebre/hipertermia":"Fiebre","hipertermia":"Fiebre",
     "fiebre alta":"Fiebre","febrícula":"Fiebre","escalofríos":"Fiebre","tiritona":"Fiebre",
     "sudoración nocturna":"Fiebre","diaforesis":"Fiebre","pérdida de peso":"Fiebre","amigdalitis":"Fiebre",
-    # Mareo (2)
-    "mareo":"Mareo","mareo/vértigo":"Mareo","vértigo":"Mareo","inestabilidad":"Mareo",
-    # Tos (3)
-    "tos":"Tos","tos seca":"Tos","tos crónica":"Tos","tos persistente":"Tos",
+    # Dolor abdominal (2)
+    "dolor abdominal":"Dolor_Abdominal","dolor en el abdomen":"Dolor_Abdominal",
+    "epigastralgia":"Dolor_Abdominal","cólico abdominal":"Dolor_Abdominal","dolor pélvico":"Dolor_Abdominal",
+    # Palpitaciones (2)
+    "palpitaciones":"Palpitaciones","taquicardia":"Palpitaciones","arritmia":"Palpitaciones",
+    # Cefalea (3)
+    "cefalea":"Cefalea","dolor de cabeza":"Cefalea","migraña":"Cefalea",
     # Náuseas/Vómitos (3)
     "náuseas":"Náuseas_Vómitos","vómitos":"Náuseas_Vómitos","náuseas/vómitos":"Náuseas_Vómitos",
     "arcadas":"Náuseas_Vómitos","regurgitación":"Náuseas_Vómitos",
-    # Cefalea (3)
-    "cefalea":"Cefalea","dolor de cabeza":"Cefalea","migraña":"Cefalea",
-    # Diarrea (3)
-    "diarrea":"Diarrea","deposiciones líquidas":"Diarrea","heces blandas":"Diarrea",
-    # Edema (3)
-    "edema":"Edema","edema/inflamación":"Edema","inflamación":"Edema","hinchazón":"Edema",
-    # Odinofagia (3)
-    "odinofagia":"Odinofagia","dolor de garganta":"Odinofagia",
-    "disfagia":"Odinofagia","dificultad para tragar":"Odinofagia",
-    # Congestión respiratoria (3)
-    "rinorrea":"Congestión_Respiratoria","congestión nasal":"Congestión_Respiratoria",
-    "congestión respiratoria":"Congestión_Respiratoria","secreción nasal":"Congestión_Respiratoria",
-    "expectoración":"Congestión_Respiratoria","moqueo":"Congestión_Respiratoria",
-    # Fatiga (4)
+    # Tos (4)
+    "tos":"Tos","tos seca":"Tos","tos crónica":"Tos","tos persistente":"Tos","tos productiva":"Tos",
+    # Fatiga (5)
     "fatiga":"Fatiga","cansancio":"Fatiga","astenia":"Fatiga","debilidad":"Fatiga","letargo":"Fatiga",
-    # Dolor musculoesquelético (4)
+    # Dolor musculoesquelético (5)
     "dolor musculoesquelético":"Dolor_Musculoesquelético","dolor muscular":"Dolor_Musculoesquelético",
     "dolor articular":"Dolor_Musculoesquelético","dolor cervical":"Dolor_Musculoesquelético",
     "dolor lumbar":"Dolor_Musculoesquelético","lumbago":"Dolor_Musculoesquelético",
     "dolor de espalda":"Dolor_Musculoesquelético","rigidez articular":"Dolor_Musculoesquelético",
-    # Anosmia (4)
-    "anosmia":"Anosmia","hiposmia":"Anosmia","pérdida de olfato":"Anosmia","ageusia":"Anosmia",
-    # Traumatismo (4)
-    "traumatismo":"Traumatismo","esguince":"Traumatismo","fractura":"Traumatismo",
-    "contusión":"Traumatismo","luxación":"Traumatismo","herida":"Traumatismo",
-    "erupción cutánea":"Traumatismo","rash":"Traumatismo","exantema":"Traumatismo","lesión cutánea":"Traumatismo",
 }
 
 
 def _entidades_estandar(entidades: list) -> list:
-    """Devuelve TODAS las entidades estándar detectadas, ordenadas por
-    gravedad clínica (1 = más grave primero), sin duplicados."""
+    """Devuelve TODAS las entidades estándar detectadas, ordenadas por gravedad."""
     estandar = set()
     for e in entidades:
-        original = (e or "").strip()
-        # Si el LLM ya devolvió una etiqueta del vocabulario cerrado
-        # (p.ej. "Dolor_Torácico"), usarla directamente sin pasar por MAPEO
-        # que solo conoce variantes en lenguaje natural.
-        if original in DICCIONARIO_PRIORIDAD:
-            estandar.add(original)
+        if e in DICCIONARIO_PRIORIDAD:
+            estandar.add(e)
             continue
-        k = original.lower()
+        k = (e or "").strip().lower()
         if k in MAPEO:
             estandar.add(MAPEO[k])
         else:
@@ -211,7 +158,7 @@ def _entidades_estandar(entidades: list) -> list:
 
 
 def _entidad_principal(entidades: list) -> str:
-    """Compat — devuelve la entidad de mayor prioridad (la primera)."""
+    """Devuelve la entidad de mayor prioridad clínica (la primera tras ordenar)."""
     ents = _entidades_estandar(entidades)
     return ents[0] if ents else "Sin_entidad"
 
@@ -222,7 +169,6 @@ def _entidad_principal(entidades: list) -> str:
 
 _whisper_model = None
 _orange_model  = None
-_orange_mtime  = 0.0   # mtime del .pkcls cargado, para hot-reload
 
 
 def _get_db() -> DatabaseService:
@@ -242,20 +188,12 @@ def _cargar_whisper():
 
 
 def _cargar_orange():
-    """Carga el modelo Orange más reciente. Si el .pkcls cambia en disco
-    (reentrenado y sustituido en runtime), se recarga automáticamente."""
-    global _orange_model, _orange_mtime
-    if not MODELS_DIR.exists():
-        return None
-    pkcls = sorted(MODELS_DIR.glob("*.pkcls"), key=lambda p: p.stat().st_mtime, reverse=True)
-    if not pkcls:
-        return None
-    mtime_actual = pkcls[0].stat().st_mtime
-    if _orange_model is None or mtime_actual > _orange_mtime:
-        with open(pkcls[0], "rb") as f:
-            _orange_model = pickle.load(f)
-        _orange_mtime = mtime_actual
-        logger.info("modelo Orange cargado: %s (mtime=%d)", pkcls[0].name, int(mtime_actual))
+    global _orange_model
+    if _orange_model is None and MODELS_DIR.exists():
+        pkcls = sorted(MODELS_DIR.glob("*.pkcls"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if pkcls:
+            with open(pkcls[0], "rb") as f:
+                _orange_model = pickle.load(f)
     return _orange_model
 
 
@@ -309,13 +247,10 @@ class PredecirRequest(BaseModel):
     entidades_normalizadas: list[str]
     categoria:              str
     score_ansiedad:         float
-    # Campos opcionales que el frontend reenvía para almacenarlos en el JSON
-    # enriquecido (sirven para el detalle del historial). No participan en la
-    # predicción ML.
-    texto:                  str        = ""
-    resumen:                str        = ""
-    entidades:              list[str]  = []
-    razonamiento:           str        = ""
+    texto:                  str = ""
+    resumen:                str = ""
+    entidades:              list[str] = []
+    razonamiento:           str = ""
 
 
 class PredecirResponse(BaseModel):
@@ -341,15 +276,17 @@ async def transcribir(file: UploadFile = File(...)):
     if not audio:
         raise HTTPException(status_code=400, detail="Audio vacío")
 
-    # Subir audio a MinIO + fila inicial en BD
     try:
-        minio.subir_audio(guid, audio, ext)
-    except Exception:
-        logger.exception("[transcribir] no se pudo subir audio %s", guid)
+        minio._client.put_object(
+            "audios", f"{guid}.{ext}",
+            BytesIO(audio), len(audio),
+            content_type=f"audio/{ext}",
+        )
+    except Exception as exc:
+        print(f"[transcribir] no se pudo subir audio: {exc}")
 
     db.crear_prediccion(guid, f"minio://audios/{guid}.{ext}")
 
-    # Whisper
     t0 = time.time()
     db.actualizar_prediccion(guid, inicio_preprocesamiento=datetime.now())
     try:
@@ -392,7 +329,7 @@ def extraer(req: ExtraerRequest):
             MISTRAL_API_URL,
             headers={"Authorization": f"Bearer {MISTRAL_API_KEY}", "Content-Type": "application/json"},
             json={
-                "model": "mistral-medium-latest",
+                "model": MISTRAL_MODEL,
                 "temperature": 0.1,
                 "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
@@ -415,14 +352,11 @@ def extraer(req: ExtraerRequest):
         inicio_score=fin_llm, fin_score=fin_llm,
     )
 
-    categoria_raw = (datos.get("categoria", "") or "").strip().upper()
-    categoria     = categoria_raw if categoria_raw in CATEGORIAS_VALIDAS else "RES"
-
     return ExtraerResponse(
         guid=req.guid,
         entidades=datos.get("entidades_extraidas", []) or [],
         entidades_normalizadas=datos.get("entidades_normalizadas", []) or [],
-        categoria=categoria,
+        categoria=(datos.get("categoria", "") or "RES").upper(),
         score_ansiedad=float(datos.get("score_ansiedad", 0.0) or 0.0),
         resumen=datos.get("resumen_es", "") or "",
         razonamiento=datos.get("justificacion", "") or "",
@@ -442,10 +376,8 @@ def predecir(req: PredecirRequest):
     db.actualizar_prediccion(req.guid, inicio_entrenamiento=datetime.now())
 
     modelo        = _cargar_orange()
-    entidades_std = _entidades_estandar(req.entidades_normalizadas)
-    entidades_set = set(entidades_std)
-    n_sintomas    = len(entidades_std)
-    entidad       = entidades_std[0] if entidades_std else "Sin_entidad"
+    entidades_set = set(_entidades_estandar(req.entidades_normalizadas))
+    entidad_ppal  = sorted(entidades_set, key=lambda x: (DICCIONARIO_PRIORIDAD.get(x, 99), x))[0] if entidades_set else "Sin_entidad"
 
     if modelo is None:
         pred = "N/A"
@@ -454,46 +386,20 @@ def predecir(req: PredecirRequest):
             from Orange.data import Table
             domain = modelo.domain
             fila   = []
-            # ── Lookups case-insensitive (Orange Bag-of-Words puede aplicar
-            # lowercase a los tokens, generando features como "disnea" en lugar
-            # de "Disnea"). Construimos versiones lower de ambos diccionarios
-            # y del set de entidades activas para que la comparación sea
-            # robusta independientemente del preprocesamiento que se eligió en
-            # Orange. ───────────────────────────────────────────────────────
-            entidades_set_lower  = {e.lower() for e in entidades_set}
-            categoria_req_lower  = (req.categoria or "").lower()
-            diccionario_lower    = {k.lower() for k in DICCIONARIO_PRIORIDAD}
-            # Variantes del token "sin síntomas" que escribe el DAG cuando
-            # el caso es C5 (entidades_normalizadas vacía). Si el modelo lo
-            # tiene como feature, hay que activarla cuando n_sintomas == 0.
-            SIN_SINTOMAS_TOKENS = {"sin_sintomas", "sin sintomas",
-                                   "sin_síntomas", "sin síntomas"}
-
-            # Las features del modelo nuevo son una mezcla de:
-            #   - Multi-hot por entidad (Orange Corpus → Bag of Words Binary),
-            #     donde el nombre de la columna coincide con la etiqueta del
-            #     vocabulario clínico (p. ej. "Disnea" o "disnea" si Orange
-            #     aplicó lowercase). Se incluye también el token "Sin_Sintomas"
-            #     que el DAG escribe para casos C5 sin entidades.
-            #   - One-hot de categoría (Continuize): "categoria=CAR".
-            #   - Numéricas: "n_sintomas", "score_ansiedad".
+            n_sintomas = len(entidades_set)
             for attr in domain.attributes:
-                name       = attr.name
-                name_lower = name.lower()
-                if name_lower in SIN_SINTOMAS_TOKENS:
-                    # Activa 1.0 SOLO cuando el caso no tiene entidades (C5).
-                    fila.append(1.0 if n_sintomas == 0 else 0.0)
-                elif name_lower in diccionario_lower:
-                    fila.append(1.0 if name_lower in entidades_set_lower else 0.0)
+                name = attr.name
+                if name in DICCIONARIO_PRIORIDAD:
+                    fila.append(1.0 if name in entidades_set else 0.0)
                 elif "=" in name:
                     var, val = name.split("=", 1)
-                    if var.lower() == "categoria":
-                        fila.append(1.0 if val.lower() == categoria_req_lower else 0.0)
+                    if var == "categoria":
+                        fila.append(1.0 if val == req.categoria else 0.0)
                     else:
                         fila.append(0.0)
-                elif name_lower == "score_ansiedad":
+                elif name == "score_ansiedad":
                     fila.append(float(req.score_ansiedad))
-                elif name_lower == "n_sintomas":
+                elif name == "n_sintomas":
                     fila.append(float(n_sintomas))
                 else:
                     fila.append(0.0)
@@ -501,32 +407,30 @@ def predecir(req: PredecirRequest):
             M = np.array([[""] * len(domain.metas)], dtype=object) if domain.metas else None
             tabla = Table.from_numpy(domain, np.array([fila]), Y, M)
             pred  = str(domain.class_var.values[int(modelo(tabla)[0])])
-        except Exception:
-            logger.exception("[predecir] fallo al ejecutar el modelo Orange para %s", req.guid)
+        except Exception as exc:
+            print(f"[predecir] error: {exc}")
             pred = "N/A"
 
     tiempo   = round(time.time() - t0, 3)
     fin_pred = datetime.now()
 
-    # Guardar JSON enriquecido en MinIO (mismo formato que dag_llm_enrichment
-    # para que el detalle del historial muestre los mismos campos)
     minio = _get_minio()
     try:
         minio.subir_json(req.guid, {
             "guid":                   req.guid,
             "origen":                 "API",
-            "categoria":              req.categoria,
             "texto":                  req.texto,
             "resumen":                req.resumen,
-            "entidades":              req.entidades,
-            "entidades_normalizadas": req.entidades_normalizadas,
-            "entidad_principal":      entidad,
             "razonamiento":           req.razonamiento,
+            "categoria":              req.categoria,
+            "entidades":              req.entidades,
+            "entidades_normalizadas": sorted(entidades_set, key=lambda x: (DICCIONARIO_PRIORIDAD.get(x, 99), x)),
+            "entidad_principal":      entidad_ppal,
             "score_ansiedad":         req.score_ansiedad,
             "prediccion_entrenada":   pred,
         })
-    except Exception:
-        logger.exception("[predecir] no se pudo subir JSON enriquecido para %s", req.guid)
+    except Exception as exc:
+        print(f"[predecir] no se pudo subir JSON: {exc}")
 
     db.actualizar_prediccion(
         req.guid,
@@ -536,5 +440,5 @@ def predecir(req: PredecirRequest):
     )
 
     return PredecirResponse(
-        guid=req.guid, prediccion_ml=pred, entidad_principal=entidad, tiempo=tiempo,
+        guid=req.guid, prediccion_ml=pred, entidad_principal=entidad_ppal, tiempo=tiempo,
     )
