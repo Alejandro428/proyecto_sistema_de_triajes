@@ -184,29 +184,24 @@ def _enriquecer(**context):
             logger.error("✗ %s: %s", guid, exc)
 
     # ---- Construir dataset_entrenamiento.csv ----
-    # Usa la entidad_principal que ya se calculó al enriquecer cada caso.
-    # El one-hot encoding NO se hace aquí — se hace en Orange con el widget
-    # Continuize sobre las columnas categóricas entidad_principal y categoria.
+    # Aplica el diccionario clínico (hasta 5 entidades estándar por caso).
+    # Las entidades se guardan como TEXTO (separadas por espacio); el
+    # one-hot/multi-hot lo genera Orange con Corpus → Bag of Words Binary.
+    # Se incluyen todas las etiquetas C1-C5.
     logger.info("→ Construyendo dataset_entrenamiento.csv...")
 
     registros = []
     for _, fila in df_conv.iterrows():
         try:
             j = descargar_json(fila["guid"])
-            # Fallback: si el JSON es antiguo y no tiene entidad_principal,
-            # se calcula al vuelo desde entidades_normalizadas.
-            ent_ppal = j.get("entidad_principal")
-            if not ent_ppal:
-                ents_raw  = j.get("entidades_normalizadas", []) or []
-                ents_norm = normalizar_entidades(ents_raw, max_n=1)
-                ent_ppal  = ents_norm[0] if ents_norm else "Sin_entidad"
-
+            ents_raw  = j.get("entidades_normalizadas", []) or []
+            ents_norm = normalizar_entidades(ents_raw, max_n=5)
             registros.append({
-                "entidad_principal": ent_ppal,
-                "resumen":           j.get("resumen", "") or "",
-                "categoria":         j.get("categoria", "") or "",
-                "score_ansiedad":    j.get("score_ansiedad", 0.0),
-                "etiqueta":          j.get("etiqueta", ""),
+                "entidades_normalizadas": " ".join(ents_norm) if ents_norm else "Sin_Sintomas",
+                "n_sintomas":             len(ents_norm),
+                "categoria":              j.get("categoria", "") or "GEN",
+                "score_ansiedad":         float(j.get("score_ansiedad", 0.0) or 0.0),
+                "etiqueta":               j.get("etiqueta", ""),
             })
         except Exception as exc:
             logger.warning("Sin JSON para %s: %s", fila["guid"], exc)
@@ -252,6 +247,9 @@ with DAG(
     )
     # Nota: el entrenamiento del modelo ya no se hace en Airflow.
     # Se hace en Orange Data Mining (workflow externo) usando
-    # data/processed/dataset_entrenamiento.csv. El modelo .pkcls resultante
-    # se guarda en ./models/randomforest_model.pkcls (montado en /app/models
-    # dentro del contenedor de la API).
+    # data/processed/dataset_entrenamiento.csv:
+    #   - entidades_normalizadas → Corpus → Bag of Words Binary (multi-hot)
+    #   - categoria              → Continuize (one-hot)
+    #   - n_sintomas, score_ansiedad → numéricas
+    # El modelo .pkcls resultante se guarda en ./models/randomforest_model.pkcls
+    # (montado en /app/models dentro del contenedor de la API).

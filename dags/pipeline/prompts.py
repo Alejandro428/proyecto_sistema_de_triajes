@@ -24,6 +24,14 @@ Mapea siempre el lenguaje coloquial a estos términos clínicos estándar:
 - "dizziness", "mareo", "lightheaded" → Mareo/Vértigo → C3 / C4
 - "fatigue", "cansancio", "tiredness" → Fatiga → C4 / C5
 
+## REGLAS PARA `entidades_normalizadas`
+- Devuelve SIEMPRE entre 2 y 5 etiquetas DEL VOCABULARIO en `entidades_normalizadas`.
+- MÍNIMO 2 etiquetas obligatorio: si el paciente menciona un solo síntoma claro,
+  añade la entidad de apoyo más probable clínicamente
+  (p. ej. Fiebre → añade Fatiga; Dolor Torácico → añade Disnea).
+- Si hay más de 5 síntomas, prioriza los más graves (prioridad clínica más alta).
+- Usa SOLO términos del vocabulario clínico estándar; ignora síntomas que no encajen.
+
 ## REGLA CRÍTICA
 La clínica siempre prevalece sobre el estado emocional.
 Un paciente con disnea real y ansiedad extrema es C2, NO C3.
@@ -34,7 +42,7 @@ Devuelve ÚNICAMENTE un JSON válido, sin texto adicional antes ni después:
 {
   "resumen_es": "resumen breve en español de los síntomas principales (2-3 frases)",
   "entidades_extraidas": ["síntoma tal como aparece en el texto original"],
-  "entidades_normalizadas": ["término clínico estándar en español"],
+  "entidades_normalizadas": ["2 a 5 términos clínicos estándar en español"],
   "triage_real": "C1|C2|C3|C4|C5",
   "justificacion": "justificación clínica breve basada en el Protocolo Manchester",
   "score_ansiedad": 0.0

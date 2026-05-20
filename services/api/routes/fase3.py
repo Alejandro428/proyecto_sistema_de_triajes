@@ -53,13 +53,20 @@ el caso (resumen + justificación de gravedad) para que el médico lo lea.
 CAR (cardiovascular), RES (respiratorio), MSK (musculoesquelético),
 GAS (gastrointestinal), GEN (general), DER (dermatológico).
 
-## VOCABULARIO CLÍNICO CERRADO — 20 ETIQUETAS (usa EXACTAMENTE UNA)
+## VOCABULARIO CLÍNICO CERRADO — 20 ETIQUETAS
 Prioridad 1 (alarma vital):    Disnea, Dolor_Torácico, Síncope, Hemoptisis
 Prioridad 2 (urgente):         Sibilancias, Palpitaciones, Dolor_Abdominal, Fiebre, Mareo
 Prioridad 3 (común):           Tos, Náuseas_Vómitos, Cefalea, Diarrea, Edema, Odinofagia, Congestión_Respiratoria
 Prioridad 4 (leve):            Fatiga, Dolor_Musculoesquelético, Anosmia, Traumatismo
 
-Si hay varios síntomas, elige el de MÁS gravedad (prioridad más baja).
+## REGLAS PARA `entidades_normalizadas`
+- Devuelve SIEMPRE entre 2 y 5 etiquetas DEL VOCABULARIO cerrado.
+- MÍNIMO 2 etiquetas obligatorio: si el paciente menciona un solo síntoma claro,
+  añade la entidad de apoyo más probable clínicamente
+  (p. ej. Fiebre → añade Fatiga; Dolor_Torácico → añade Disnea).
+- Máximo 5 etiquetas; si hay más síntomas, prioriza los más graves
+  (prioridad 1 > 2 > 3 > 4).
+- Usa SOLO las 20 etiquetas del vocabulario; si un síntoma no encaja, ignóralo.
 
 ## SCORE_ANSIEDAD — IMPORTANTE
 Estima el nivel de ansiedad/angustia emocional del paciente entre 0.0 y 1.0
@@ -76,8 +83,7 @@ Guía de estimación:
             ("me ahogo, me muero", "no puedo respirar, ayuda", "auxilio")
 
 ## FORMATO DE SALIDA
-Devuelve ÚNICAMENTE un JSON válido, sin texto adicional. La lista
-"entidades_normalizadas" debe contener UNA SOLA etiqueta del vocabulario cerrado.
+Devuelve ÚNICAMENTE un JSON válido, sin texto adicional.
 Reemplaza el valor de score_ansiedad por tu estimación real (NO copies 0.0).
 "resumen_es" debe ser 2-3 frases en español describiendo los síntomas principales.
 "justificacion" debe explicar brevemente la gravedad clínica observada SIN
@@ -87,7 +93,7 @@ Ejemplo:
 {
   "resumen_es":            "Paciente con dolor torácico opresivo y disnea de aparición reciente. Refiere miedo intenso. Cuadro compatible con evento cardiovascular agudo.",
   "entidades_extraidas":   ["dolor en el pecho", "me cuesta respirar", "tengo miedo"],
-  "entidades_normalizadas":["Dolor_Torácico"],
+  "entidades_normalizadas":["Dolor_Torácico", "Disnea", "Palpitaciones"],
   "categoria":             "CAR",
   "score_ansiedad":        0.75,
   "justificacion":         "Dolor torácico opresivo asociado a disnea sugiere posible isquemia miocárdica."
@@ -174,7 +180,9 @@ MAPEO = {
 }
 
 
-def _entidad_principal(entidades: list) -> str:
+def _entidades_estandar(entidades: list) -> list:
+    """Devuelve TODAS las entidades estándar detectadas, ordenadas por
+    gravedad clínica (1 = más grave primero), sin duplicados."""
     estandar = set()
     for e in entidades:
         original = (e or "").strip()
@@ -192,9 +200,13 @@ def _entidad_principal(entidades: list) -> str:
                 if key in k and len(key) >= 5:
                     estandar.add(val)
                     break
-    if not estandar:
-        return "Sin_entidad"
-    return min(estandar, key=lambda x: (DICCIONARIO_PRIORIDAD.get(x, 99), x))
+    return sorted(estandar, key=lambda x: (DICCIONARIO_PRIORIDAD.get(x, 99), x))
+
+
+def _entidad_principal(entidades: list) -> str:
+    """Compat — devuelve la entidad de mayor prioridad (la primera)."""
+    ents = _entidades_estandar(entidades)
+    return ents[0] if ents else "Sin_entidad"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -422,8 +434,11 @@ def predecir(req: PredecirRequest):
     t0 = time.time()
     db.actualizar_prediccion(req.guid, inicio_entrenamiento=datetime.now())
 
-    modelo  = _cargar_orange()
-    entidad = _entidad_principal(req.entidades_normalizadas)
+    modelo        = _cargar_orange()
+    entidades_std = _entidades_estandar(req.entidades_normalizadas)
+    entidades_set = set(entidades_std)
+    n_sintomas    = len(entidades_std)
+    entidad       = entidades_std[0] if entidades_std else "Sin_entidad"
 
     if modelo is None:
         pred = "N/A"
@@ -432,18 +447,28 @@ def predecir(req: PredecirRequest):
             from Orange.data import Table
             domain = modelo.domain
             fila   = []
+            # Las features del modelo nuevo son una mezcla de:
+            #   - Multi-hot por entidad (Orange Corpus → Bag of Words Binary),
+            #     donde el nombre de la columna coincide con la etiqueta del
+            #     vocabulario clínico (p. ej. "Disnea", "Dolor_Torácico").
+            #   - One-hot de categoría (Continuize): nombre "categoria=CAR".
+            #   - Numéricas: "n_sintomas", "score_ansiedad".
+            # Cualquier otra columna (tokens raros como "Sin_Sintomas") se
+            # rellena con 0.0.
             for attr in domain.attributes:
                 name = attr.name
-                if "=" in name:
+                if name in DICCIONARIO_PRIORIDAD:
+                    fila.append(1.0 if name in entidades_set else 0.0)
+                elif "=" in name:
                     var, val = name.split("=", 1)
-                    if var == "entidad_principal":
-                        fila.append(1.0 if val == entidad else 0.0)
-                    elif var == "categoria":
+                    if var == "categoria":
                         fila.append(1.0 if val == req.categoria else 0.0)
                     else:
                         fila.append(0.0)
                 elif name == "score_ansiedad":
                     fila.append(float(req.score_ansiedad))
+                elif name == "n_sintomas":
+                    fila.append(float(n_sintomas))
                 else:
                     fila.append(0.0)
             Y = np.array([[np.nan]])
