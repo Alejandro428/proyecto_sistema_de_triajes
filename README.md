@@ -275,6 +275,18 @@ Esto arranca: PostgreSQL · MinIO · Airflow (init + webserver + scheduler) · A
 5. Pulsar **🔬 Analizar audio**
 6. Ver el banner Manchester con la predicción + tiempos por fase
 
+> **Audios de prueba disponibles** en `data/audios/`:
+>
+> | Archivo | Síntomas | Predicción esperada |
+> |---|---|---|
+> | `ejemplo_c2.mp3` | Dolor torácico + disnea + palpitaciones | C2 |
+> | `ejemplo_c3.mp3` | Fiebre + tos + náuseas/vómitos | C3 |
+> | `ejemplo_c4.mp3` | Cefalea moderada | C4 |
+> | `ejemplo_c5.mp3` | Cansancio leve + consulta rutinaria | C5 |
+> | `ejemplo1.mp3`   | Audio de ejemplo genérico | C2–C3 |
+>
+> Nota: C1 no es predecible con los modelos actuales (ver sección del dataset).
+
 ### D) Consultar el historial
 
 Pestaña **📋 Historial** → tabla con todas las predicciones (con filtro por GUID) + detalle al seleccionar un caso (incluye tabla de tiempos por fase).

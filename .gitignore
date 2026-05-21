@@ -23,5 +23,5 @@ venv/
 # Claude Code internal settings
 .claude/
 
-# Audios de prueba (los de producción van a MinIO, no al repo)
-data/audios/
+# Los audios de producción van a MinIO via API y nunca tocan disco.
+# Los audios de prueba (data/audios/) SÍ se guardan en el repo.
