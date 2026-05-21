@@ -366,7 +366,7 @@ la API). Los DAGs de Fase 1 NO escriben aquí.
 ```sql
 guid_entrevista              VARCHAR(255) PRIMARY KEY
 url_texto_original           VARCHAR(255)
-motor_workflow               VARCHAR(50)   -- 'API'   (predicciones de Fase 3)
+motor_workflow               VARCHAR(50)   -- siempre 'API' (predicciones de Fase 3)
 estado                       VARCHAR(50)   -- 'PREDICIENDO' | 'PREDICCION_COMPLETADA' | 'ERROR'
 
 -- Timestamps por fase del pipeline:
@@ -376,13 +376,19 @@ inicio_preprocesamiento      TIMESTAMP     -- Whisper inicio
 fin_preprocesamiento         TIMESTAMP     -- Whisper fin
 inicio_extraccion_entidades  TIMESTAMP     -- Mistral inicio
 fin_extraccion_entidades     TIMESTAMP     -- Mistral fin
-inicio_score                 TIMESTAMP
-fin_score                    TIMESTAMP
-inicio_entrenamiento         TIMESTAMP     -- en Fase 3 = inicio predict ML
-fin_entrenamiento            TIMESTAMP     -- fin predict ML
+inicio_entrenamiento         TIMESTAMP     -- predict ML inicio
+fin_entrenamiento            TIMESTAMP     -- predict ML fin
 ```
 
 Cada predicción crea una fila y se va actualizando con los timestamps a lo largo del pipeline.
+
+> **Nota:** el schema solo contiene las columnas realmente usadas. Se descartaron
+> columnas heredadas del diseño inicial que nunca llegaron a tener valor:
+> `url_dataset_generado`, `url_modelo_entrenado` (los modelos se gestionan en
+> disco local, no en la BD), `inicio/fin_normalizacion`, `inicio/fin_etiquetado`
+> (pasos que en la implementación final quedaron fusionados en la llamada a
+> Mistral), `inicio/fin_score` (el score de ansiedad lo devuelve Mistral en la
+> misma respuesta, no es un paso separado) y `workflow_id` (sin uso).
 
 ---
 
