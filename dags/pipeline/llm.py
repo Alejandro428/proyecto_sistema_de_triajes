@@ -23,8 +23,9 @@ class LLMService:
                 "Content-Type":  "application/json",
             },
             json={
-                "model":       MODELO,
-                "temperature": 0.1,
+                "model":           MODELO,
+                "temperature":     0.1,
+                "response_format": {"type": "json_object"},
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user",   "content": texto},
