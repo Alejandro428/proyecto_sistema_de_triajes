@@ -38,7 +38,7 @@ Sistema que clasifica entrevistas clínicas en niveles de prioridad **Manchester
 │         ▼  (trigger automático)                                     │
 │  [dag_llm_enrichment]                                               │
 │      Mistral extrae entidades por cada conversación                 │
-│      diccionario_clinico aplica 20 entidades estándar               │
+│      diccionario_clinico normaliza a 10 entidades estándar               │
 │      → dataset_entrenamiento.csv                                    │
 └─────────────────────────────────────────────────────────────────────┘
                               │
@@ -86,7 +86,7 @@ Sistema que clasifica entrevistas clínicas en niveles de prioridad **Manchester
 2. **`dag_llm_enrichment`** (se lanza automáticamente al terminar el anterior):
    - Por cada conversación llama a la API de Mistral con el prompt clínico
    - Mistral devuelve `entidades_extraidas`, `entidades_normalizadas`, `triage_real`, `score_ansiedad`, `resumen_es`, `justificacion`
-   - Aplica el **diccionario clínico** (`pipeline/diccionario_clinico.py`) que reduce las ~539 etiquetas crudas que devuelve el LLM a las **20 entidades estándar** del vocabulario (hasta 5 por caso, ordenadas por gravedad)
+   - Aplica el **diccionario clínico** (`pipeline/diccionario_clinico.py`) que normaliza las etiquetas crudas del LLM a las **10 entidades estándar** del vocabulario (hasta 5 por caso, ordenadas por gravedad)
    - Cada JSON enriquecido se guarda en MinIO (`enriquecidos/{guid}.json`) — es idempotente, si ya existe se salta
    - Genera **`dataset_entrenamiento.csv`** con 5 columnas: `entidades_normalizadas` (texto, espacio-separado), `n_sintomas`, `categoria`, `score_ansiedad`, `etiqueta`
 
@@ -162,8 +162,7 @@ proyecto_sistema_de_triajes/
 │       ├── dataset_entrenamiento.csv   ← features para Orange
 │       └── analisis_entidades.txt      ← stats del diccionario
 │
-├── models/
-│   └── randomforest_model.pkcls        ← modelo entrenado en Orange
+├── models/                            ← aquí se guarda el .pkcls tras entrenar en Orange
 │
 └── services/
     ├── airflow/                        ← Dockerfile Airflow
@@ -307,32 +306,53 @@ Permite comparar visualmente varios modelos (Random Forest, Logistic Regression,
 
 ## Diccionario clínico
 
-Para evitar la dispersión semántica del LLM (que generaba ~539 etiquetas únicas para 270 casos), se aplica un **diccionario clínico** que reduce a **20 entidades estándar**, organizadas por prioridad Manchester:
+Se aplica un **diccionario clínico** que normaliza las etiquetas crudas del LLM a **10 entidades estándar**, organizadas por prioridad Manchester:
 
 ```
-Prioridad 1 (signos vitales — sospecha C1/C2)
-  Disnea · Dolor_Torácico · Síncope · Hemoptisis
+Prioridad 1 — alarma vital (sospecha C1/C2)
+  Disnea · Dolor_Torácico
 
-Prioridad 2 (urgentes — C2/C3)
-  Sibilancias · Palpitaciones · Dolor_Abdominal · Fiebre · Mareo
+Prioridad 2 — urgente (C2/C3)
+  Fiebre · Dolor_Abdominal · Palpitaciones
 
-Prioridad 3 (comunes — C3/C4)
-  Tos · Náuseas_Vómitos · Cefalea · Diarrea · Edema · Odinofagia ·
-  Congestión_Respiratoria
+Prioridad 3 — común (C3/C4)
+  Cefalea · Náuseas_Vómitos
 
-Prioridad 4 (leves — C4/C5)
-  Fatiga · Dolor_Musculoesquelético · Anosmia · Traumatismo
+Prioridad 4 — leve (C4)
+  Tos
+
+Prioridad 5 — no urgente (C5)
+  Fatiga · Dolor_Musculoesquelético
 ```
 
-Cada caso se queda con **hasta 5 entidades**, ordenadas por gravedad (la primera es la principal). En el dataset se almacenan como texto separado por espacios y Orange genera el multi-hot binario con el widget *Bag of Words Binary*. Ver `dags/pipeline/diccionario_clinico.py` (cubre sinónimos como "alteración_conciencia" → `Síncope`, "erupción_cutánea" → `Traumatismo`, "sudoración_nocturna" → `Fiebre`, etc.).
+Cada caso se queda con **hasta 5 entidades**, ordenadas por gravedad (la principal es la de mayor prioridad). En el dataset se almacenan como texto separado por espacios y Orange genera el multi-hot binario con el widget *Bag of Words Binary*. Ver `dags/pipeline/diccionario_clinico.py`.
 
-**Estadísticas del análisis** (en `data/processed/analisis_entidades.txt`):
+**Estadísticas del run actual** (270 casos · detalle completo en `data/processed/analisis_entidades.txt`):
 
 ```
-Casos analizados:                270
-Entidades crudas únicas:         539  ← lo que devolvía Mistral
-Entidades estándar:               20  ← después del diccionario
-Casos sin entidad mapeable:       12 (4.4%)
+Casos analizados:              270
+Entidades activas:              10
+Score de ansiedad medio:      0.34
+Caso sin síntomas (Sin_Sintomas): 1
+
+── Distribución Manchester ──────────────────────
+  C1    0 casos  (  0.0%)  sin casos de paro vital
+  C2   65 casos  ( 24.1%)  ██████
+  C3  121 casos  ( 44.8%)  █████████████████████████████
+  C4   58 casos  ( 21.5%)  █████████████
+  C5   26 casos  (  9.6%)  █████
+
+── Entidades más frecuentes ─────────────────────
+  Tos                  165 casos  (61.1%)
+  Fatiga               140 casos  (51.9%)
+  Fiebre               102 casos  (37.8%)
+  Disnea                94 casos  (34.8%)
+  Dolor_Musculoesquelético  84 casos  (31.1%)
+  Dolor_Torácico        53 casos  (19.6%)
+  Cefalea               43 casos  (15.9%)
+  Náuseas_Vómitos       26 casos  ( 9.6%)
+  Palpitaciones         20 casos  ( 7.4%)
+  Dolor_Abdominal       19 casos  ( 7.0%)
 ```
 
 ---

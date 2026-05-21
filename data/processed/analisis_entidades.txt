@@ -1,0 +1,83 @@
+═════════════════════════════════════════════════════════════════
+  ANÁLISIS DE ENTIDADES — TriageIA (vocabulario de 10 entidades)
+═════════════════════════════════════════════════════════════════
+
+Casos analizados:                            270
+Entidades activas en vocabulario:             10
+Caso sin síntomas (Sin_Sintomas):              1  (0.4%)
+Score de ansiedad medio:                    0.34
+
+═════════════════════════════════════════════════════════════════
+  FRECUENCIA DE ENTIDADES (por prioridad Manchester)
+═════════════════════════════════════════════════════════════════
+
+Prioridad 1 = alarma vital (sospecha C1/C2)
+Prioridad 2 = cuadro urgente (C2/C3)
+Prioridad 3 = síntoma común (C3/C4)
+Prioridad 4 = síntoma leve (C4)
+Prioridad 5 = no urgente (C5)
+
+
+── Prioridad 1 ──
+  Disnea                          94 casos  ( 34.8%)  ███████
+  Dolor_Torácico                  53 casos  ( 19.6%)  ███
+
+── Prioridad 2 ──
+  Fiebre                         102 casos  ( 37.8%)  ███████
+  Dolor_Abdominal                 19 casos  (  7.0%)  █
+  Palpitaciones                   20 casos  (  7.4%)  █
+
+── Prioridad 3 ──
+  Cefalea                         43 casos  ( 15.9%)  ███
+  Náuseas_Vómitos                 26 casos  (  9.6%)  █
+
+── Prioridad 4 ──
+  Tos                            165 casos  ( 61.1%)  ████████████
+
+── Prioridad 5 ──
+  Fatiga                         140 casos  ( 51.9%)  ██████████
+  Dolor_Musculoesquelético        84 casos  ( 31.1%)  ██████
+
+═════════════════════════════════════════════════════════════════
+  DISTRIBUCIÓN POR NIVEL MANCHESTER (target)
+═════════════════════════════════════════════════════════════════
+
+  C1    0 casos  (  0.0%)  — sin casos de paro vital en Fareez OSCE
+  C2   65 casos  ( 24.1%)  ██████
+  C3  121 casos  ( 44.8%)  ████████████████████████████████████████████
+  C4   58 casos  ( 21.5%)  █████████████████████
+  C5   26 casos  (  9.6%)  █████████
+
+═════════════════════════════════════════════════════════════════
+  DISTRIBUCIÓN POR CATEGORÍA CLÍNICA
+═════════════════════════════════════════════════════════════════
+
+  RES  (Respiratorio/General)     211 casos  ( 78.1%)  ████████████████████████████████████████
+  MSK  (Musculoesquelético)        46 casos  ( 17.0%)  █████████
+  GAS  (Gastrointestinal)           6 casos  (  2.2%)  █
+  CAR  (Cardiológico)               5 casos  (  1.9%)  █
+  DER  (Dermatológico)              1 caso   (  0.4%)
+  GEN  (General)                    1 caso   (  0.4%)
+
+═════════════════════════════════════════════════════════════════
+  DISTRIBUCIÓN DE N_SINTOMAS (entidades por caso)
+═════════════════════════════════════════════════════════════════
+
+  0 síntomas    1 caso   (  0.4%)
+  1 síntoma    56 casos  ( 20.7%)  ████
+  2 síntomas   46 casos  ( 17.0%)  ███
+  3 síntomas   91 casos  ( 33.7%)  ██████
+  4 síntomas   55 casos  ( 20.4%)  ████
+  5 síntomas   21 casos  (  7.8%)  █
+
+═════════════════════════════════════════════════════════════════
+  NOTAS DE CALIDAD
+═════════════════════════════════════════════════════════════════
+
+  - 0 filas con NaN en cualquier columna
+  - 0 etiquetas fuera del rango C1-C5
+  - 0 inconsistencias en n_sintomas vs. entidades contadas
+  - C1 ausente: esperable — el dataset Fareez OSCE no contiene
+    casos de parada cardíaca o estado vegetativo
+  - RES dominante (78%): el dataset es de origen respiratorio/
+    infeccioso (médicos de familia), no de urgencias hospitalarias
