@@ -3,7 +3,7 @@ TriageIA — Frontend Streamlit
 Pestañas: Nuevo Triaje | Historial
 
 El frontend NO procesa nada: solo sube el audio a la API y muestra
-el resultado. Toda la lógica (Whisper + Mistral + Random Forest + BD)
+el resultado. Toda la lógica (Whisper + Mistral + Modelo ML (Orange) + BD)
 vive en el servicio API (FastAPI).
 """
 

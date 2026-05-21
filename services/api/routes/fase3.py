@@ -8,6 +8,7 @@ El frontend los llama secuencialmente y muestra progreso entre cada paso.
 """
 
 import json
+import logging
 import os
 import pickle
 import re
@@ -17,6 +18,8 @@ import uuid
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 import httpx
 import numpy as np
@@ -291,13 +294,9 @@ async def transcribir(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Audio vacío")
 
     try:
-        minio._client.put_object(
-            "audios", f"{guid}.{ext}",
-            BytesIO(audio), len(audio),
-            content_type=f"audio/{ext}",
-        )
+        minio.subir_audio(guid, audio, ext)
     except Exception as exc:
-        print(f"[transcribir] no se pudo subir audio: {exc}")
+        logger.warning("[transcribir] no se pudo subir audio: %s", exc)
 
     db.crear_prediccion(guid, f"minio://audios/{guid}.{ext}")
 
@@ -361,11 +360,7 @@ def extraer(req: ExtraerRequest):
 
     tiempo  = round(time.time() - t0, 3)
     fin_llm = datetime.now()
-    db.actualizar_prediccion(
-        req.guid,
-        fin_extraccion_entidades=fin_llm,
-        inicio_score=fin_llm, fin_score=fin_llm,
-    )
+    db.actualizar_prediccion(req.guid, fin_extraccion_entidades=fin_llm)
 
     return ExtraerResponse(
         guid=req.guid,
@@ -435,7 +430,7 @@ def predecir(req: PredecirRequest):
             tabla = Table.from_numpy(domain, np.array([fila]), Y, M)
             pred  = str(domain.class_var.values[int(modelo(tabla)[0])])
         except Exception as exc:
-            print(f"[predecir] error: {exc}")
+            logger.error("[predecir] error Orange: %s", exc)
             pred = "N/A"
 
     tiempo   = round(time.time() - t0, 3)
@@ -458,7 +453,7 @@ def predecir(req: PredecirRequest):
             "modelo_usado":           modelo_key or "N/A",
         })
     except Exception as exc:
-        print(f"[predecir] no se pudo subir JSON: {exc}")
+        logger.warning("[predecir] no se pudo subir JSON: %s", exc)
 
     db.actualizar_prediccion(
         req.guid,

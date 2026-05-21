@@ -34,8 +34,6 @@ def get_historial(limit: int = 300) -> pd.DataFrame:
                                                                              AS dur_transcripcion_seg,
             ROUND(EXTRACT(EPOCH FROM (fin_extraccion_entidades - inicio_extraccion_entidades))::NUMERIC, 2)
                                                                              AS dur_llm_seg,
-            ROUND(EXTRACT(EPOCH FROM (fin_score - inicio_score))::NUMERIC, 2)
-                                                                             AS dur_score_seg,
             ROUND(EXTRACT(EPOCH FROM (fin_entrenamiento - inicio_entrenamiento))::NUMERIC, 2)
                                                                              AS dur_etiquetado_seg
         FROM entrevista

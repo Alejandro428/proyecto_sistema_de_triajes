@@ -4,7 +4,7 @@ Sistema que clasifica entrevistas clínicas en niveles de prioridad **Manchester
 
 - **Whisper** para transcribir audio
 - **Mistral** (LLM) para extraer entidades clínicas
-- **Random Forest** entrenado en **Orange Data Mining** para predecir el nivel
+- Un **clasificador ML** entrenado en **Orange Data Mining** para predecir el nivel
 
 ---
 
