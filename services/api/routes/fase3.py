@@ -343,8 +343,9 @@ def extraer(req: ExtraerRequest):
             MISTRAL_API_URL,
             headers={"Authorization": f"Bearer {MISTRAL_API_KEY}", "Content-Type": "application/json"},
             json={
-                "model": MISTRAL_MODEL,
-                "temperature": 0.1,
+                "model":           MISTRAL_MODEL,
+                "temperature":     0.1,
+                "response_format": {"type": "json_object"},
                 "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user",   "content": req.texto},

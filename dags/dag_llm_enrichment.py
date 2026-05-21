@@ -301,5 +301,6 @@ with DAG(
     #   - entidades_normalizadas → Corpus → Bag of Words Binary (multi-hot)
     #   - categoria              → Continuize (one-hot)
     #   - n_sintomas, score_ansiedad → numéricas
-    # El modelo .pkcls resultante se guarda en ./models/randomforest_model.pkcls
+    # El modelo .pkcls resultante se guarda en ./models/
     # (montado en /app/models dentro del contenedor de la API).
+    # La API detecta automáticamente todos los .pkcls disponibles.

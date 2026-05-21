@@ -519,10 +519,12 @@ with tab_historial:
                 pred = j.get("prediccion_entrenada", "") or ""
                 _manchester_card(pred)
 
-                mc1, mc2, mc3 = st.columns(3)
+                modelo_j = j.get("modelo_usado") or "—"
+                mc1, mc2, mc3, mc4 = st.columns(4)
                 mc1.metric("Predicción ML",  pred or "—")
                 mc2.metric("Categoría",      j.get("categoria", "—") or "—")
                 mc3.metric("Score ansiedad", f"{float(j.get('score_ansiedad', 0) or 0):.2f}")
+                mc4.metric("Modelo usado",   modelo_j)
 
                 # ── Resumen clínico generado por el LLM ──────────────────────
                 resumen_j = j.get("resumen") or ""
@@ -574,10 +576,10 @@ with tab_historial:
                     f = f.iloc[0]
                     st.dataframe(
                         pd.DataFrame([
-                            {"Fase": "🎤 Transcripción Whisper", "Duración": _fmt_dur(f.get("dur_transcripcion_seg"))},
-                            {"Fase": "🧠 Extracción IA (Mistral)", "Duración": _fmt_dur(f.get("dur_llm_seg"))},
-                            {"Fase": "🤖 Predicción ML (Orange)",  "Duración": _fmt_dur(f.get("dur_etiquetado_seg"))},
-                            {"Fase": "⏱  Total end-to-end",        "Duración": _fmt_dur(f.get("dur_e2e_seg"))},
+                            {"Fase": "🎤 Transcripción Whisper",              "Duración": _fmt_dur(f.get("dur_transcripcion_seg"))},
+                            {"Fase": "🧠 Extracción IA (Mistral)",             "Duración": _fmt_dur(f.get("dur_llm_seg"))},
+                            {"Fase": f"🤖 Predicción ML ({modelo_j})",         "Duración": _fmt_dur(f.get("dur_etiquetado_seg"))},
+                            {"Fase": "⏱  Total end-to-end",                    "Duración": _fmt_dur(f.get("dur_e2e_seg"))},
                         ]),
                         hide_index=True,
                         use_container_width=True,
