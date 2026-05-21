@@ -1,3 +1,23 @@
+"""
+Cliente MinIO para los DAGs de Airflow.
+
+Estructura de buckets (alineada con el resto del sistema):
+
+  predicciones/                              ← Fase 3 (no usado por DAGs)
+    <guid>/audio.<ext>
+    <guid>/transcripcion.txt
+    <guid>/dataset.json
+
+  entrenamiento/                             ← Fase 1 (DAGs)
+    texto/<guid>.txt
+    enriquecidos/<guid>.json
+    datasets/<filename>.csv
+
+Las firmas públicas (subir_texto, subir_json, descargar_json, json_existe,
+subir_bytes, descargar_bytes, BUCKET_DATASETS) se mantienen para no obligar
+a tocar los DAGs más de lo necesario.
+"""
+
 import json
 import logging
 import os
@@ -7,12 +27,20 @@ from minio import Minio
 
 logger = logging.getLogger(__name__)
 
-BUCKET_AUDIOS       = "audios"
-BUCKET_TEXTOS       = "textos"
-BUCKET_ENRIQUECIDOS = "enriquecidos"
-BUCKET_DATASETS     = "datasets"
+# Buckets (única fuente de verdad)
+BUCKET_PREDICCIONES  = "predicciones"
+BUCKET_ENTRENAMIENTO = "entrenamiento"
 
-_BUCKETS = [BUCKET_AUDIOS, BUCKET_TEXTOS, BUCKET_ENRIQUECIDOS, BUCKET_DATASETS]
+# Alias retrocompatible: los DAGs siguen importando BUCKET_DATASETS,
+# pero ahora apunta al bucket de entrenamiento. Los DAGs deben usar
+# nombres con prefijo "datasets/..." al subir/descargar CSVs.
+BUCKET_DATASETS = BUCKET_ENTRENAMIENTO
+
+# Prefijos dentro del bucket entrenamiento
+_PREFIX_TEXTO        = "texto"
+_PREFIX_ENRIQUECIDOS = "enriquecidos"
+
+_BUCKETS = [BUCKET_PREDICCIONES, BUCKET_ENTRENAMIENTO]
 
 _client: Minio | None = None
 
@@ -38,15 +66,15 @@ def _inicializar_buckets(client: Minio) -> None:
 
 
 # ------------------------------------------------------------------ #
-# Operaciones de texto                                                 #
+# Operaciones de texto (entrenamiento)                                 #
 # ------------------------------------------------------------------ #
 
 def subir_texto(guid: str, contenido: str) -> str:
     client = get_client()
-    nombre = f"{guid}.txt"
+    nombre = f"{_PREFIX_TEXTO}/{guid}.txt"
     data   = contenido.encode("utf-8")
-    client.put_object(BUCKET_TEXTOS, nombre, BytesIO(data), len(data), content_type="text/plain")
-    url = f"minio://{BUCKET_TEXTOS}/{nombre}"
+    client.put_object(BUCKET_ENTRENAMIENTO, nombre, BytesIO(data), len(data), content_type="text/plain")
+    url = f"minio://{BUCKET_ENTRENAMIENTO}/{nombre}"
     logger.debug("Texto subido: %s", url)
     return url
 
@@ -58,28 +86,28 @@ def descargar_texto(url: str) -> str:
 
 
 # ------------------------------------------------------------------ #
-# Operaciones de JSON enriquecido                                      #
+# Operaciones de JSON enriquecido (entrenamiento)                      #
 # ------------------------------------------------------------------ #
 
 def subir_json(guid: str, datos: dict) -> str:
     client = get_client()
-    nombre = f"{guid}.json"
+    nombre = f"{_PREFIX_ENRIQUECIDOS}/{guid}.json"
     data   = json.dumps(datos, ensure_ascii=False).encode("utf-8")
-    client.put_object(BUCKET_ENRIQUECIDOS, nombre, BytesIO(data), len(data), content_type="application/json")
-    url = f"minio://{BUCKET_ENRIQUECIDOS}/{nombre}"
+    client.put_object(BUCKET_ENTRENAMIENTO, nombre, BytesIO(data), len(data), content_type="application/json")
+    url = f"minio://{BUCKET_ENTRENAMIENTO}/{nombre}"
     logger.debug("JSON subido: %s", url)
     return url
 
 
 def descargar_json(guid: str) -> dict:
-    nombre = f"{guid}.json"
-    data   = get_client().get_object(BUCKET_ENRIQUECIDOS, nombre).read()
+    nombre = f"{_PREFIX_ENRIQUECIDOS}/{guid}.json"
+    data   = get_client().get_object(BUCKET_ENTRENAMIENTO, nombre).read()
     return json.loads(data)
 
 
 def json_existe(guid: str) -> bool:
     try:
-        get_client().stat_object(BUCKET_ENRIQUECIDOS, f"{guid}.json")
+        get_client().stat_object(BUCKET_ENTRENAMIENTO, f"{_PREFIX_ENRIQUECIDOS}/{guid}.json")
         return True
     except Exception:
         return False

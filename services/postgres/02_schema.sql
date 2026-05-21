@@ -10,5 +10,8 @@ CREATE TABLE IF NOT EXISTS Entrevista (
     Inicio_Entrenamiento        TIMESTAMP,
     Fin_Entrenamiento           TIMESTAMP,
     Motor_Workflow              VARCHAR(50),
-    Estado                      VARCHAR(50)
+    Estado                      VARCHAR(50),
+    Modelo_Usado                VARCHAR(255)
 );
+
+ALTER TABLE Entrevista ADD COLUMN IF NOT EXISTS Modelo_Usado VARCHAR(255);

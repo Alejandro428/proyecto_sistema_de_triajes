@@ -26,6 +26,7 @@ def get_historial(limit: int = 300) -> pd.DataFrame:
             guid_entrevista                                                  AS guid,
             estado,
             motor_workflow                                                   AS origen_motor,
+            modelo_usado,
             inicio_solicitud,
             fin_solicitud,
             ROUND(EXTRACT(EPOCH FROM (fin_solicitud - inicio_solicitud))::NUMERIC, 2)

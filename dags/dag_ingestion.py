@@ -58,7 +58,7 @@ def _ingestar(**context):
     csv_bytes = df.to_csv(index=False).encode("utf-8")
 
     # 1) MinIO
-    subir_bytes(BUCKET_DATASETS, "conversaciones.csv", csv_bytes, content_type="text/csv")
+    subir_bytes(BUCKET_DATASETS, "datasets/conversaciones.csv", csv_bytes, content_type="text/csv")
 
     # 2) Copia local accesible desde el host (./data/processed/)
     local_dir = os.path.join(DATA_DIR, "processed")

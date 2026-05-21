@@ -6,10 +6,8 @@ from minio import Minio
 
 logger = logging.getLogger(__name__)
 
-BUCKET_AUDIOS       = "audios"
-BUCKET_TEXTOS       = "textos"
-BUCKET_ENRIQUECIDOS = "enriquecidos"
-BUCKET_DATASETS     = "datasets"
+BUCKET_PREDICCIONES  = "predicciones"   # predicciones/<guid>/audio.<ext> · transcripcion.txt · dataset.json
+BUCKET_ENTRENAMIENTO = "entrenamiento"  # entrenamiento/texto · enriquecidos · datasets
 
 
 class MinIOService:
@@ -18,32 +16,48 @@ class MinIOService:
         self._inicializar_buckets()
 
     def _inicializar_buckets(self):
-        for b in (BUCKET_AUDIOS, BUCKET_TEXTOS, BUCKET_ENRIQUECIDOS, BUCKET_DATASETS):
+        for b in (BUCKET_PREDICCIONES, BUCKET_ENTRENAMIENTO):
             try:
                 if not self._client.bucket_exists(b):
                     self._client.make_bucket(b)
             except Exception:
                 logger.exception("No se pudo inicializar bucket %s", b)
 
+    # ------------------------------------------------------------------ #
+    # LECTURA                                                             #
+    # ------------------------------------------------------------------ #
+
     def descargar_json(self, guid: str) -> dict | None:
         try:
-            data = self._client.get_object(BUCKET_ENRIQUECIDOS, f"{guid}.json").read()
+            data = self._client.get_object(BUCKET_PREDICCIONES, f"{guid}/dataset.json").read()
             return json.loads(data)
         except Exception:
             return None
+
+    # ------------------------------------------------------------------ #
+    # ESCRITURA                                                           #
+    # ------------------------------------------------------------------ #
 
     def subir_bytes(self, bucket: str, nombre: str, datos: bytes, content_type: str = "application/octet-stream") -> str:
         self._client.put_object(bucket, nombre, BytesIO(datos), len(datos), content_type=content_type)
         return f"minio://{bucket}/{nombre}"
 
     def subir_audio(self, guid: str, datos: bytes, ext: str) -> str:
-        nombre = f"{guid}.{ext}"
-        return self.subir_bytes(BUCKET_AUDIOS, nombre, datos, content_type=f"audio/{ext}")
+        return self.subir_bytes(
+            BUCKET_PREDICCIONES, f"{guid}/audio.{ext}",
+            datos, content_type=f"audio/{ext}",
+        )
 
     def subir_texto(self, guid: str, texto: str) -> str:
         data = texto.encode("utf-8")
-        return self.subir_bytes(BUCKET_TEXTOS, f"{guid}.txt", data, content_type="text/plain")
+        return self.subir_bytes(
+            BUCKET_PREDICCIONES, f"{guid}/transcripcion.txt",
+            data, content_type="text/plain",
+        )
 
     def subir_json(self, guid: str, datos: dict) -> str:
         data = json.dumps(datos, ensure_ascii=False).encode("utf-8")
-        return self.subir_bytes(BUCKET_ENRIQUECIDOS, f"{guid}.json", data, content_type="application/json")
+        return self.subir_bytes(
+            BUCKET_PREDICCIONES, f"{guid}/dataset.json",
+            data, content_type="application/json",
+        )

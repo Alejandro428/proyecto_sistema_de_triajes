@@ -16,7 +16,6 @@ import tempfile
 import time
 import uuid
 from datetime import datetime
-from io import BytesIO
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -298,7 +297,7 @@ async def transcribir(file: UploadFile = File(...)):
     except Exception as exc:
         logger.warning("[transcribir] no se pudo subir audio: %s", exc)
 
-    db.crear_prediccion(guid, f"minio://audios/{guid}.{ext}")
+    db.crear_prediccion(guid, f"minio://predicciones/{guid}/audio.{ext}")
 
     t0 = time.time()
     db.actualizar_prediccion(guid, inicio_preprocesamiento=datetime.now())
@@ -460,6 +459,7 @@ def predecir(req: PredecirRequest):
         fin_entrenamiento=fin_pred,
         fin_solicitud=datetime.now(),
         estado="PREDICCION_COMPLETADA",
+        modelo_usado=modelo_key or "N/A",
     )
 
     return PredecirResponse(

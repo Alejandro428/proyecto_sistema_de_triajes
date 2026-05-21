@@ -172,7 +172,7 @@ def _llamar_con_retry(llm: LLMService, texto: str) -> tuple[dict, float, int]:
 def _enriquecer(**context):
     llm = LLMService(MISTRAL_API_KEY)
 
-    csv_bytes = descargar_bytes(BUCKET_DATASETS, "conversaciones.csv")
+    csv_bytes = descargar_bytes(BUCKET_DATASETS, "datasets/conversaciones.csv")
     df_conv   = pd.read_csv(io.BytesIO(csv_bytes))
     logger.info("→ %d casos en conversaciones.csv", len(df_conv))
 
@@ -266,7 +266,7 @@ def _enriquecer(**context):
     local_path = os.path.join(local_dir, "dataset_entrenamiento.csv")
     with open(local_path, "wb") as f:
         f.write(csv_bytes)
-    subir_bytes(BUCKET_DATASETS, "dataset_entrenamiento.csv", csv_bytes, content_type="text/csv")
+    subir_bytes(BUCKET_DATASETS, "datasets/dataset_entrenamiento.csv", csv_bytes, content_type="text/csv")
 
     logger.info(
         "✓ dataset_entrenamiento.csv (%d filas, %d columnas) → MinIO + %s",

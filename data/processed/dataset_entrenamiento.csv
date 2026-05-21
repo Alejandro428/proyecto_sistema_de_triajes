@@ -4,15 +4,15 @@ Disnea Dolor_Torácico Palpitaciones,3,CAR,0.7,C2
 Disnea Dolor_Torácico Tos Fatiga,4,CAR,0.3,C2
 Dolor_Torácico Fiebre Tos Fatiga,4,CAR,0.75,C3
 Dolor_Torácico Palpitaciones,2,CAR,0.4,C3
-Fiebre Dolor_Musculoesquelético,2,DER,0.4,C3
-Dolor_Abdominal Náuseas_Vómitos,2,GAS,0.3,C4
+Fiebre Dolor_Musculoesquelético Fatiga,3,DER,0.4,C3
+Dolor_Abdominal Náuseas_Vómitos,2,GAS,0.3,C3
 Dolor_Abdominal Náuseas_Vómitos Fatiga,3,GAS,0.3,C2
 Dolor_Abdominal Náuseas_Vómitos Fatiga,3,GAS,0.4,C2
 Dolor_Abdominal Náuseas_Vómitos Fatiga,3,GAS,0.3,C3
 Dolor_Abdominal Fiebre Náuseas_Vómitos,3,GAS,0.3,C3
-Dolor_Abdominal,1,GAS,0.3,C3
-Fatiga,1,GEN,0.3,C5
-Dolor_Musculoesquelético,1,MSK,0.3,C3
+Dolor_Abdominal Náuseas_Vómitos,2,GAS,0.3,C3
+Fatiga,1,GEN,0.3,C4
+Dolor_Musculoesquelético,1,MSK,0.3,C4
 Dolor_Musculoesquelético Fatiga,2,MSK,0.1,C5
 Dolor_Musculoesquelético,1,MSK,0.3,C4
 Dolor_Musculoesquelético,1,MSK,0.1,C5
@@ -20,14 +20,14 @@ Dolor_Musculoesquelético,1,MSK,0.3,C4
 Dolor_Musculoesquelético,1,MSK,0.1,C5
 Dolor_Musculoesquelético,1,MSK,0.3,C4
 Dolor_Musculoesquelético,1,MSK,0.3,C3
-Dolor_Musculoesquelético,1,MSK,0.3,C4
+Dolor_Musculoesquelético,1,MSK,0.3,C5
 Dolor_Musculoesquelético,1,MSK,0.3,C4
 Dolor_Musculoesquelético,1,MSK,0.3,C3
+Dolor_Musculoesquelético Fatiga,2,MSK,0.3,C5
+Dolor_Musculoesquelético,1,MSK,0.3,C4
+Fiebre Tos Dolor_Musculoesquelético,3,MSK,0.7,C3
 Dolor_Musculoesquelético,1,MSK,0.3,C5
 Dolor_Musculoesquelético,1,MSK,0.3,C4
-Fiebre Tos Dolor_Musculoesquelético,3,MSK,0.7,C4
-Dolor_Musculoesquelético,1,MSK,0.3,C5
-Dolor_Musculoesquelético,1,MSK,0.3,C5
 Dolor_Musculoesquelético,1,MSK,0.3,C3
 Dolor_Musculoesquelético,1,MSK,0.1,C5
 Dolor_Musculoesquelético,1,MSK,0.1,C5
@@ -37,9 +37,9 @@ Dolor_Musculoesquelético,1,MSK,0.3,C3
 Dolor_Musculoesquelético,1,MSK,0.1,C5
 Dolor_Musculoesquelético,1,MSK,0.75,C2
 Dolor_Musculoesquelético,1,MSK,0.3,C4
+Dolor_Musculoesquelético,1,MSK,0.3,C3
 Dolor_Musculoesquelético,1,MSK,0.3,C4
 Dolor_Musculoesquelético,1,MSK,0.3,C4
-Dolor_Musculoesquelético,1,MSK,0.3,C5
 Dolor_Musculoesquelético Fatiga,2,MSK,0.4,C3
 Dolor_Musculoesquelético,1,MSK,0.3,C4
 Dolor_Musculoesquelético,1,MSK,0.1,C5
@@ -48,224 +48,224 @@ Dolor_Musculoesquelético,1,MSK,0.3,C4
 Dolor_Musculoesquelético,1,MSK,0.3,C5
 Dolor_Musculoesquelético,1,MSK,0.1,C5
 Dolor_Musculoesquelético,1,MSK,0.1,C5
-Dolor_Musculoesquelético,1,MSK,0.4,C3
+Dolor_Musculoesquelético,1,MSK,0.7,C3
 Dolor_Musculoesquelético,1,MSK,0.3,C4
 Dolor_Musculoesquelético,1,MSK,0.3,C4
 Dolor_Musculoesquelético,1,MSK,0.4,C5
-Fiebre Dolor_Musculoesquelético,2,MSK,0.3,C2
-Dolor_Musculoesquelético,1,MSK,0.3,C3
-Dolor_Musculoesquelético,1,MSK,0.1,C5
+Fiebre Dolor_Musculoesquelético,2,MSK,0.75,C2
+Dolor_Musculoesquelético,1,MSK,0.4,C3
+Dolor_Musculoesquelético,1,MSK,0.3,C4
 Dolor_Musculoesquelético,1,MSK,0.3,C4
 Dolor_Musculoesquelético,1,MSK,0.1,C5
 Dolor_Musculoesquelético,1,MSK,0.1,C5
-Disnea Dolor_Torácico Palpitaciones Tos Dolor_Musculoesquelético,5,RES,0.5,C2
+Disnea Dolor_Torácico Palpitaciones,3,RES,0.5,C2
 Dolor_Abdominal Fiebre Fatiga,3,RES,0.3,C3
-Dolor_Abdominal Fiebre Fatiga,3,RES,0.3,C3
+Fiebre Dolor_Musculoesquelético Fatiga,3,RES,0.3,C3
 Disnea Tos Fatiga,3,RES,0.7,C3
-Disnea Dolor_Torácico Tos,3,RES,0.3,C3
+Disnea Tos Fatiga,3,RES,0.3,C3
 Disnea Palpitaciones Tos,3,RES,0.4,C3
 Dolor_Torácico Fiebre Tos,3,RES,0.3,C3
-Disnea Dolor_Torácico Fatiga,3,RES,0.75,C2
-Dolor_Abdominal Fiebre Náuseas_Vómitos Fatiga,4,RES,0.3,C3
+Disnea Dolor_Torácico Fatiga,3,RES,0.7,C2
+Dolor_Abdominal Fiebre Fatiga,3,RES,0.3,C3
 Fiebre Fatiga,2,RES,0.3,C3
 Disnea Dolor_Torácico Fiebre Tos Fatiga,5,RES,0.4,C2
-Disnea Dolor_Torácico Fatiga,3,RES,0.75,C2
-Disnea Dolor_Torácico Tos,3,RES,0.7,C3
-Disnea Fiebre Náuseas_Vómitos Tos Fatiga,5,RES,0.7,C2
+Disnea Dolor_Torácico,2,RES,0.75,C2
+Disnea Dolor_Torácico Tos,3,RES,0.4,C3
+Disnea Fiebre Tos Fatiga,4,RES,0.7,C2
 Disnea Tos Fatiga,3,RES,0.4,C3
 Tos Dolor_Musculoesquelético Fatiga,3,RES,0.3,C4
 Disnea Fiebre Náuseas_Vómitos Tos Fatiga,5,RES,0.4,C3
-Fiebre Cefalea Dolor_Musculoesquelético Fatiga,4,RES,0.3,C3
+Fiebre Cefalea Fatiga,3,RES,0.3,C3
 Disnea Dolor_Torácico Fatiga,3,RES,0.4,C2
-Fiebre Tos Fatiga,3,RES,0.1,C3
-Disnea Fiebre Cefalea Náuseas_Vómitos,4,RES,0.75,C2
-Dolor_Torácico Fiebre Tos Fatiga,4,RES,0.3,C3
+Fiebre Tos Fatiga,3,RES,0.3,C3
+Disnea Fiebre Cefalea Fatiga,4,RES,0.4,C2
+Fiebre Tos Fatiga,3,RES,0.3,C3
 Fatiga,1,RES,0.3,C4
-Fiebre Náuseas_Vómitos Dolor_Musculoesquelético,3,RES,0.3,C3
-Fiebre Cefalea Tos Fatiga,4,RES,0.3,C3
-Fiebre Cefalea Tos Fatiga,4,RES,0.3,C3
+Fiebre Náuseas_Vómitos Dolor_Musculoesquelético Fatiga,4,RES,0.3,C3
+Fiebre Cefalea Tos,3,RES,0.3,C3
+Fiebre Cefalea Tos Dolor_Musculoesquelético Fatiga,5,RES,0.3,C3
 Disnea Dolor_Torácico Palpitaciones Tos Fatiga,5,RES,0.7,C2
 Disnea Dolor_Torácico,2,RES,0.4,C2
 Disnea Tos Fatiga,3,RES,0.3,C3
 Dolor_Abdominal Fiebre Fatiga,3,RES,0.3,C3
-Dolor_Torácico Tos Fatiga,3,RES,0.4,C2
-Dolor_Torácico Tos Fatiga,3,RES,0.3,C3
+Disnea Dolor_Torácico Tos Fatiga,4,RES,0.4,C2
+Disnea Dolor_Torácico Tos,3,RES,0.3,C3
 Fiebre Náuseas_Vómitos Tos,3,RES,0.7,C3
 Disnea Tos Fatiga,3,RES,0.3,C3
 Disnea Dolor_Torácico Fiebre Tos,4,RES,0.3,C2
 Fiebre Tos Fatiga,3,RES,0.3,C3
-Disnea Tos,2,RES,0.3,C4
-Fiebre Náuseas_Vómitos Tos Fatiga,4,RES,0.75,C3
+Disnea Palpitaciones Tos,3,RES,0.3,C3
+Fiebre Náuseas_Vómitos Tos Fatiga,4,RES,0.7,C3
 Fiebre Tos,2,RES,0.3,C3
 Fiebre Tos Fatiga,3,RES,0.7,C3
-Fiebre Tos Fatiga,3,RES,0.3,C3
+Fiebre Tos Fatiga,3,RES,0.4,C3
 Disnea Fiebre Tos,3,RES,0.4,C3
 Dolor_Abdominal Fiebre Náuseas_Vómitos Tos Fatiga,5,RES,0.3,C3
-Disnea Tos Fatiga,3,RES,0.7,C2
-Disnea Náuseas_Vómitos Tos,3,RES,0.4,C3
+Disnea Dolor_Torácico Tos Fatiga,4,RES,0.7,C2
+Disnea Tos Fatiga,3,RES,0.4,C3
 Fiebre Tos Fatiga,3,RES,0.4,C3
-Disnea Dolor_Torácico Tos,3,RES,0.3,C3
-Fiebre Tos Fatiga,3,RES,0.1,C4
+Disnea Dolor_Torácico Tos Fatiga,4,RES,0.3,C3
+Tos Fatiga,2,RES,0.0,C4
 Fiebre Tos,2,RES,0.3,C4
 Tos Fatiga,2,RES,0.4,C4
-Disnea Dolor_Torácico Tos,3,RES,0.4,C2
-Fiebre Tos,2,RES,0.3,C3
+Disnea Dolor_Torácico Tos,3,RES,0.3,C2
+Fiebre Tos,2,RES,0.3,C4
 Disnea Cefalea Tos Dolor_Musculoesquelético Fatiga,5,RES,0.3,C3
-Fiebre Tos Fatiga,3,RES,0.3,C3
+Náuseas_Vómitos Tos Fatiga,3,RES,0.3,C3
 Fiebre Tos Dolor_Musculoesquelético Fatiga,4,RES,0.4,C3
 Fiebre Cefalea Náuseas_Vómitos Tos Fatiga,5,RES,0.3,C3
-Fiebre Cefalea Náuseas_Vómitos Tos Fatiga,5,RES,0.3,C3
+Dolor_Abdominal Fiebre Cefalea Náuseas_Vómitos Fatiga,5,RES,0.3,C3
 Disnea Dolor_Abdominal Tos Fatiga,4,RES,0.3,C3
 Fiebre Dolor_Musculoesquelético Fatiga,3,RES,0.3,C3
 Dolor_Abdominal Fiebre Cefalea,3,RES,0.3,C3
 Fiebre Cefalea Fatiga,3,RES,0.3,C3
 Disnea Fiebre Tos Fatiga,4,RES,0.3,C2
-Disnea Dolor_Abdominal Fiebre Tos,4,RES,0.75,C2
-Cefalea Fatiga,2,RES,0.1,C4
+Disnea Dolor_Abdominal Fiebre Fatiga,4,RES,0.75,C2
+Cefalea Fatiga,2,RES,0.3,C4
 Fiebre Cefalea Fatiga,3,RES,0.3,C3
-Cefalea Tos Dolor_Musculoesquelético Fatiga,4,RES,0.3,C3
+Disnea Cefalea Tos Fatiga,4,RES,0.3,C3
 Dolor_Torácico Cefalea Tos Fatiga,4,RES,0.3,C3
-Dolor_Abdominal Fiebre Náuseas_Vómitos,3,RES,0.3,C3
+Dolor_Abdominal Fiebre Cefalea Náuseas_Vómitos,4,RES,0.3,C3
 Tos Fatiga,2,RES,0.3,C4
 Dolor_Abdominal Dolor_Musculoesquelético Fatiga,3,RES,0.3,C4
-Disnea Dolor_Torácico Tos,3,RES,0.5,C2
-Disnea Náuseas_Vómitos Tos Fatiga,4,RES,0.3,C2
-Disnea Fiebre Cefalea Tos Dolor_Musculoesquelético,5,RES,0.3,C3
+Disnea Dolor_Torácico Tos,3,RES,0.7,C2
+Disnea Náuseas_Vómitos Tos Fatiga,4,RES,0.3,C3
+Disnea Dolor_Torácico Fiebre Cefalea Tos,5,RES,0.3,C3
 Disnea Dolor_Torácico Fiebre Tos,4,RES,0.3,C2
 Fiebre Tos Fatiga,3,RES,0.3,C3
-Disnea Fiebre Tos,3,RES,0.4,C2
-Disnea Tos Fatiga,3,RES,0.7,C2
+Disnea Fiebre Palpitaciones Tos,4,RES,0.3,C2
+Disnea Tos Fatiga,3,RES,0.75,C2
 Cefalea Tos,2,RES,0.1,C4
 Cefalea Tos Dolor_Musculoesquelético,3,RES,0.3,C4
 Fiebre Cefalea Náuseas_Vómitos Fatiga,4,RES,0.3,C3
-Fiebre Náuseas_Vómitos Tos Fatiga,4,RES,0.75,C3
+Disnea Fiebre Náuseas_Vómitos Tos,4,RES,0.75,C2
 Disnea Tos,2,RES,0.3,C3
-Dolor_Abdominal Tos,2,RES,0.3,C4
+Tos,1,RES,0.3,C4
 Tos Fatiga,2,RES,0.3,C4
-Disnea Palpitaciones Tos Fatiga,4,RES,0.45,C2
+Disnea Dolor_Torácico Tos Fatiga,4,RES,0.4,C2
 Fiebre Tos Fatiga,3,RES,0.4,C2
 Cefalea Fatiga,2,RES,0.1,C4
 Cefalea Tos Fatiga,3,RES,0.1,C4
-Disnea Palpitaciones Náuseas_Vómitos Tos,4,RES,0.4,C2
+Disnea Palpitaciones Náuseas_Vómitos Tos,4,RES,0.3,C2
 Cefalea Dolor_Musculoesquelético Fatiga,3,RES,0.1,C4
 Disnea Palpitaciones Fatiga,3,RES,0.75,C2
-Disnea Fiebre Tos Fatiga,4,RES,0.4,C2
-Fiebre Tos Dolor_Musculoesquelético Fatiga,4,RES,0.4,C3
-Disnea Dolor_Torácico Tos,3,RES,0.45,C2
+Disnea Fiebre Tos Fatiga,4,RES,0.3,C2
+Fiebre Tos Dolor_Musculoesquelético Fatiga,4,RES,0.7,C2
+Disnea Dolor_Torácico Tos,3,RES,0.3,C2
 Fiebre Cefalea Tos Dolor_Musculoesquelético Fatiga,5,RES,0.3,C3
 Dolor_Abdominal Fiebre Fatiga,3,RES,0.3,C3
-Disnea Tos Dolor_Musculoesquelético,3,RES,0.75,C2
+Tos Dolor_Musculoesquelético,2,RES,0.75,C2
 Dolor_Torácico Tos Fatiga,3,RES,0.4,C2
 Tos,1,RES,0.0,C5
-Disnea Fiebre Palpitaciones Tos Fatiga,5,RES,0.4,C2
+Disnea Fiebre Palpitaciones Tos Fatiga,5,RES,0.3,C2
 Disnea Dolor_Torácico Fiebre Tos,4,RES,0.45,C2
 Dolor_Torácico Tos,2,RES,0.3,C4
-Fatiga,1,RES,0.3,C5
+Fatiga,1,RES,0.05,C5
 Tos,1,RES,0.3,C4
-Tos,1,RES,0.7,C4
+Tos Fatiga,2,RES,0.7,C4
 Disnea Dolor_Torácico Fiebre Tos Fatiga,5,RES,0.45,C2
 Fiebre Fatiga,2,RES,0.1,C3
 Disnea Fiebre Náuseas_Vómitos Fatiga,4,RES,0.7,C2
 Fiebre Cefalea Tos Fatiga,4,RES,0.3,C3
 Disnea Dolor_Torácico Tos,3,RES,0.3,C3
-Fiebre,1,RES,0.3,C3
-Tos Fatiga,2,RES,0.75,C3
-Tos,1,RES,0.3,C5
-Disnea Tos Fatiga,3,RES,0.3,C3
-Disnea Dolor_Torácico Fiebre Tos,4,RES,0.7,C2
-Tos,1,RES,0.0,C4
-Cefalea,1,RES,0.1,C4
-Fiebre Cefalea Tos Dolor_Musculoesquelético,4,RES,0.3,C3
-Disnea Dolor_Torácico Tos,3,RES,0.3,C3
+Fiebre Fatiga,2,RES,0.3,C3
+Tos Fatiga,2,RES,0.7,C3
 Tos,1,RES,0.3,C4
-Disnea Tos Fatiga,3,RES,0.5,C2
-Tos Fatiga,2,RES,0.1,C5
+Disnea Tos Fatiga,3,RES,0.3,C3
+Disnea Dolor_Torácico Fiebre Tos,4,RES,0.4,C2
+Tos,1,RES,0.1,C4
+Cefalea,1,RES,0.0,C4
+Fiebre Cefalea Tos Dolor_Musculoesquelético,4,RES,0.3,C3
 Disnea Palpitaciones Tos,3,RES,0.3,C3
-Fiebre Cefalea Tos,3,RES,0.3,C3
+Cefalea Tos,2,RES,0.3,C4
+Disnea Dolor_Torácico Fiebre Tos Fatiga,5,RES,0.7,C2
+Tos Fatiga,2,RES,0.3,C5
+Disnea Tos,2,RES,0.3,C3
+Fiebre Tos Fatiga,3,RES,0.3,C3
 Disnea Tos Dolor_Musculoesquelético,3,RES,0.4,C2
 Cefalea Tos Dolor_Musculoesquelético Fatiga,4,RES,0.3,C4
-Disnea Dolor_Torácico Tos,3,RES,0.3,C2
+Disnea Tos,2,RES,0.3,C2
 Tos Fatiga,2,RES,0.3,C4
-Disnea Dolor_Torácico Fiebre Tos Fatiga,5,RES,0.7,C2
+Disnea Dolor_Torácico Fiebre Tos Fatiga,5,RES,0.45,C2
 Disnea Fiebre Náuseas_Vómitos Tos,4,RES,0.4,C3
 Disnea Tos Fatiga,3,RES,0.3,C2
-Náuseas_Vómitos Tos Fatiga,3,RES,0.75,C3
-Disnea Dolor_Torácico Tos,3,RES,0.3,C3
+Náuseas_Vómitos Tos Fatiga,3,RES,0.7,C3
+Disnea Tos,2,RES,0.3,C4
 Tos,1,RES,0.3,C4
 Disnea Dolor_Torácico Dolor_Musculoesquelético,3,RES,0.4,C2
 Fiebre Cefalea Fatiga,3,RES,0.3,C3
-Fiebre Fatiga,2,RES,0.1,C3
-Tos Fatiga,2,RES,0.1,C4
-Disnea Fatiga,2,RES,0.75,C2
-Fiebre Tos Dolor_Musculoesquelético Fatiga,4,RES,0.1,C3
+Fiebre Cefalea Fatiga,3,RES,0.1,C3
+Cefalea Tos,2,RES,0.1,C4
+Disnea Fatiga,2,RES,0.7,C2
+Fiebre Tos Fatiga,3,RES,0.3,C3
 Fiebre Cefalea Fatiga,3,RES,0.3,C3
-Disnea Palpitaciones Tos,3,RES,0.4,C2
+Disnea Dolor_Torácico Tos,3,RES,0.4,C2
 Fiebre Tos Dolor_Musculoesquelético Fatiga,4,RES,0.3,C3
 Disnea Dolor_Torácico Dolor_Musculoesquelético,3,RES,0.4,C2
-Fiebre Náuseas_Vómitos Tos,3,RES,0.4,C3
+Fiebre Tos,2,RES,0.4,C3
 Tos,1,RES,0.3,C4
-Fiebre Tos Fatiga,3,RES,0.3,C3
+Fiebre Tos Fatiga,3,RES,0.3,C2
 Dolor_Abdominal Fiebre Fatiga,3,RES,0.3,C3
 Disnea Fiebre Tos Fatiga,4,RES,0.3,C2
-Disnea Dolor_Torácico Fiebre Tos,4,RES,0.3,C2
+Disnea Dolor_Torácico Fiebre Tos,4,RES,0.45,C2
 Disnea Tos Fatiga,3,RES,0.3,C3
-Fiebre Cefalea Tos Dolor_Musculoesquelético Fatiga,5,RES,0.4,C3
+Fiebre Cefalea Tos Dolor_Musculoesquelético Fatiga,5,RES,0.3,C3
 Disnea Dolor_Torácico Tos Fatiga,4,RES,0.3,C2
 Cefalea Tos,2,RES,0.1,C4
 Cefalea Fatiga,2,RES,0.3,C4
 Disnea Palpitaciones Tos,3,RES,0.3,C3
 Sin_Sintomas,0,RES,0.0,C5
-Fiebre Tos Fatiga,3,RES,0.3,C3
+Tos Fatiga,2,RES,0.3,C4
 Tos Dolor_Musculoesquelético Fatiga,3,RES,0.3,C4
-Disnea Dolor_Torácico Fatiga,3,RES,0.4,C2
+Disnea Dolor_Torácico,2,RES,0.3,C2
 Disnea Fiebre Tos Fatiga,4,RES,0.3,C3
 Cefalea Fatiga,2,RES,0.3,C4
 Fiebre Cefalea Tos Fatiga,4,RES,0.1,C3
-Disnea Tos Fatiga,3,RES,0.3,C3
+Disnea Palpitaciones Tos,3,RES,0.3,C3
 Disnea Dolor_Torácico Palpitaciones Dolor_Musculoesquelético,4,RES,0.4,C2
-Fiebre Cefalea Tos Fatiga,4,RES,0.3,C3
+Fiebre Cefalea Tos Fatiga,4,RES,0.1,C3
 Disnea Fiebre Tos Fatiga,4,RES,0.3,C3
-Disnea Palpitaciones,2,RES,0.85,C3
+Disnea Palpitaciones,2,RES,0.85,C2
 Fiebre Tos Dolor_Musculoesquelético Fatiga,4,RES,0.3,C3
-Disnea Palpitaciones Tos,3,RES,0.75,C2
+Disnea Palpitaciones Tos,3,RES,0.7,C2
 Disnea Dolor_Torácico Fiebre Tos,4,RES,0.3,C2
 Fiebre Tos Dolor_Musculoesquelético Fatiga,4,RES,0.3,C3
-Disnea Dolor_Torácico Tos Fatiga,4,RES,0.7,C3
+Disnea Dolor_Torácico Tos Fatiga,4,RES,0.75,C3
 Fiebre Cefalea Tos Fatiga,4,RES,0.3,C3
-Dolor_Abdominal Fiebre Fatiga,3,RES,0.1,C3
+Fiebre Fatiga,2,RES,0.1,C3
 Fiebre Tos Fatiga,3,RES,0.3,C2
-Fiebre Tos,2,RES,0.3,C3
-Cefalea Fatiga,2,RES,0.0,C5
+Disnea Fiebre Tos,3,RES,0.3,C3
+Cefalea Fatiga,2,RES,0.1,C4
 Cefalea Tos,2,RES,0.1,C4
 Disnea Dolor_Abdominal Fiebre Náuseas_Vómitos Tos,5,RES,0.4,C2
 Fiebre Tos Dolor_Musculoesquelético Fatiga,4,RES,0.3,C3
-Disnea Fiebre Tos Fatiga,4,RES,0.75,C2
-Disnea Fiebre Tos Fatiga,4,RES,0.45,C2
-Fiebre Cefalea Tos Fatiga,4,RES,0.1,C3
+Disnea Fiebre Tos Fatiga,4,RES,0.7,C2
+Disnea Fiebre Tos Fatiga,4,RES,0.4,C2
+Dolor_Abdominal Fiebre Fatiga,3,RES,0.3,C3
 Disnea,1,RES,0.0,C4
 Disnea Tos Fatiga,3,RES,0.3,C3
-Disnea Tos Fatiga,3,RES,0.3,C3
+Disnea Tos,2,RES,0.3,C3
 Fiebre Cefalea Tos Dolor_Musculoesquelético Fatiga,5,RES,0.3,C3
-Disnea Fiebre Dolor_Musculoesquelético Fatiga,4,RES,0.3,C3
+Disnea Dolor_Musculoesquelético Fatiga,3,RES,0.3,C3
 Fiebre Fatiga,2,RES,0.3,C3
-Disnea Tos,2,RES,0.3,C2
+Disnea Tos,2,RES,0.3,C3
 Tos,1,RES,0.1,C4
 Cefalea Náuseas_Vómitos Tos Fatiga,4,RES,0.3,C3
-Disnea Tos Fatiga,3,RES,0.3,C3
-Disnea Dolor_Musculoesquelético Fatiga,3,RES,0.4,C2
-Fiebre Tos Fatiga,3,RES,0.3,C3
+Disnea Tos Fatiga,3,RES,0.3,C2
+Disnea Dolor_Torácico Dolor_Musculoesquelético Fatiga,4,RES,0.4,C2
+Fiebre Tos Fatiga,3,RES,0.45,C3
 Tos,1,RES,0.3,C4
-Fiebre Tos,2,RES,0.1,C4
+Tos,1,RES,0.1,C4
 Dolor_Torácico Tos,2,RES,0.3,C4
 Disnea Dolor_Torácico Fiebre Tos,4,RES,0.4,C2
 Disnea Fiebre Tos,3,RES,0.4,C2
-Disnea Fiebre Tos Dolor_Musculoesquelético Fatiga,5,RES,0.4,C2
-Disnea Palpitaciones Tos,3,RES,0.3,C2
-Disnea Dolor_Torácico Fiebre Tos,4,RES,0.3,C2
-Cefalea Tos Fatiga,3,RES,0.1,C4
-Fiebre Tos Fatiga,3,RES,0.3,C3
+Disnea Fiebre Cefalea Tos Dolor_Musculoesquelético,5,RES,0.4,C2
+Disnea Dolor_Torácico Tos,3,RES,0.3,C2
+Dolor_Torácico Fiebre Tos,3,RES,0.3,C3
+Fiebre Cefalea Tos Fatiga,4,RES,0.1,C3
+Tos Fatiga,2,RES,0.3,C4
 Dolor_Torácico Palpitaciones Fatiga,3,RES,0.85,C3
-Fiebre Dolor_Musculoesquelético Fatiga,3,RES,0.3,C3
+Fiebre Dolor_Musculoesquelético Fatiga,3,RES,0.1,C3
 Disnea Tos Fatiga,3,RES,0.3,C3
 Disnea Dolor_Torácico Tos,3,RES,0.3,C3
 Dolor_Musculoesquelético,1,RES,0.3,C5
