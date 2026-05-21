@@ -33,7 +33,7 @@ Sistema que clasifica entrevistas clínicas en niveles de prioridad **Manchester
 │  .info files (Fareez OSCE)                                          │
 │         │                                                           │
 │         ▼                                                           │
-│  [dag_ingestion]  parser → conversaciones.csv (MinIO + disco + DB) │
+│  [dag_ingestion]  parser → conversaciones.csv (MinIO + disco)       │
 │         │                                                           │
 │         ▼  (trigger automático)                                     │
 │  [dag_llm_enrichment]                                               │
@@ -49,10 +49,10 @@ Sistema que clasifica entrevistas clínicas en niveles de prioridad **Manchester
 │  dataset_entrenamiento.csv                                          │
 │         │                                                           │
 │         ▼                                                           │
-│   File → Continuize (one-hot) → Random Forest → Save Model          │
+│   File → BoW Binary → Continuize → Modelo → Save Model             │
 │   Test & Score (CV 5-fold) + Confusion Matrix para validar          │
 │                                                                     │
-│   Salida: models/randomforest_model.pkcls                           │
+│   Salida: models/<nombre_modelo>.pkcls                              │
 └─────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -65,7 +65,7 @@ Sistema que clasifica entrevistas clínicas en niveles de prioridad **Manchester
 │   2. Mistral (LLM)    → 2-5 entidades, categoría, score_ansiedad   │
 │                         (NO predice triaje)                         │
 │   3. diccionario      → entidades normalizadas + n_sintomas         │
-│   4. Random Forest    → predicción C1-C5                            │
+│   4. Modelo ML (Orange) → predicción C1-C5                          │
 │                                                                     │
 │   Tiempos por fase → PostgreSQL                                     │
 │   Resultado JSON   → MinIO                                          │
@@ -102,7 +102,7 @@ El entrenamiento se hace **fuera de Docker**, en Orange Desktop, porque:
 - Genera matrices de confusión, ROC, métricas, etc.
 - El profesor puede ver el workflow visual
 
-El modelo resultante (`randomforest_model.pkcls`) se guarda en **`./models/`** (carpeta en la raíz del proyecto). Docker monta esa carpeta como `/app/models` dentro del contenedor de la **API** (ver `docker-compose.yml`). La API detecta automáticamente cualquier `.pkcls` nuevo o modificado y lo recarga sin reiniciar (hot-reload por `mtime`). El frontend NO carga el modelo: solo llama al endpoint `/fase3/predecir`.
+El modelo resultante (`.pkcls`) se guarda en **`./models/`** (carpeta en la raíz del proyecto). Docker monta esa carpeta como `/app/models` dentro del contenedor de la **API** (ver `docker-compose.yml`). El frontend muestra un **selectbox** con todos los `.pkcls` disponibles — puedes tener varios modelos a la vez y elegir cuál usar sin reiniciar nada. El frontend NO carga el modelo: solo llama al endpoint `/fase3/predecir`.
 
 ### Fase 3 — Predicción en producción (Streamlit)
 
@@ -115,7 +115,7 @@ El flujo interno:
 1. **Whisper** transcribe el audio (modelo `base`, español)
 2. **Mistral** extrae 2-5 entidades + categoría + score_ansiedad (NO clasifica)
 3. Diccionario clínico normaliza las entidades y calcula `n_sintomas`
-4. **Random Forest de Orange** predice C1-C5 (multi-hot por entidad + n_sintomas + categoría + score)
+4. **Modelo ML (Orange)** predice C1-C5 (multi-hot por entidad + n_sintomas + categoría + score)
 5. Cada fase queda registrada con timestamps en PostgreSQL
 
 ---
@@ -125,13 +125,13 @@ El flujo interno:
 | Capa | Tecnología | Función |
 |---|---|---|
 | Orquestación | **Apache Airflow 2.9** | DAGs de ingestión y enrichment |
-| Backend API | **FastAPI** (Python 3.11) | Endpoint `/fase3/predict` |
+| Backend API | **FastAPI** (Python 3.11) | Endpoints `/fase3/predecir`, `/fase3/modelos` |
 | Frontend | **Streamlit** | UI con 2 pestañas |
 | BD | **PostgreSQL 16** | Tabla `entrevista` con timestamps por fase |
 | Object storage | **MinIO** (S3-compatible) | audios, textos, JSONs enriquecidos, datasets |
 | Transcripción | **OpenAI Whisper** (`base`) | Audio → texto en español |
 | Extracción NLP | **Mistral** (`mistral-medium-latest`) | Texto → entidades clínicas |
-| Modelo ML | **Random Forest** entrenado en **Orange Data Mining** | Predicción C1-C5 |
+| Modelo ML | **Modelo Orange** (RF, Logístico, SVM…) entrenado en **Orange Data Mining** | Predicción C1-C5 |
 | Contenedores | **Docker Compose** | Orquestación local |
 
 ---
@@ -149,7 +149,7 @@ proyecto_sistema_de_triajes/
 │   ├── dag_llm_enrichment.py
 │   └── pipeline/
 │       ├── config.py
-│       ├── diccionario_clinico.py     ← 20 entidades estándar + mapeo
+│       ├── diccionario_clinico.py     ← 10 entidades estándar + mapeo
 │       ├── llm.py                      ← cliente Mistral
 │       ├── minio_client.py
 │       ├── parser.py                   ← parser de .info
@@ -177,7 +177,7 @@ proyecto_sistema_de_triajes/
     │       ├── db_queries.py
     │       └── minio_helpers.py
     ├── postgres/                       ← scripts init BD
-    │   ├── 01_create_databases.sh
+    │   ├── 01_create_databases.sql     ← crea bases triageia + airflow
     │   └── 02_schema.sql               ← tabla entrevista
     └── grafana/                        ← dashboards + datasource
         ├── dashboards/triageia.json
@@ -243,11 +243,11 @@ Esto arranca: PostgreSQL · MinIO · Airflow (init + webserver + scheduler) · A
    - **Corpus** → convierte `entidades_normalizadas` en corpus de texto
    - **Bag of Words Binary** → genera una feature binaria por cada entidad clínica (multi-hot)
    - **Continuize** → One-hot encoding para `categoria` (deja `n_sintomas` y `score_ansiedad` como numéricas)
-   - **Random Forest** (200 árboles, Balance class distribution ✓)
+   - **Clasificador** (p.ej. Random Forest con 200 árboles y Balance class distribution ✓, o Logístico, SVM, kNN…)
    - **Test & Score** → Cross validation 5 folds (Stratified OFF si hay clases con <5 muestras)
    - **Confusion Matrix** y **ROC Analysis** para validar
-   - **Save Model** → guardar el `.pkcls` en la carpeta **`./models/`** de la raíz del proyecto (la misma carpeta donde está `randomforest_model.pkcls`).
-3. Guardar el workflow como `triagle.ows` por si hay que reentrenar.
+   - **Save Model** → guardar el `.pkcls` en la carpeta **`./models/`** de la raíz del proyecto. El nombre del archivo es libre; el frontend lo mostrará en el selector de modelos.
+3. Guardar el workflow como `docs/triagle.ows` por si hay que reentrenar.
 
 > **¿Dónde se guarda el modelo y cómo lo ve la API?**
 >
@@ -261,19 +261,19 @@ Esto arranca: PostgreSQL · MinIO · Airflow (init + webserver + scheduler) · A
 >   volumes:
 >     - ./models:/app/models
 >   ```
-> - **Hot-reload:** la API revisa el `mtime` de cada `.pkcls` en cada
->   predicción y carga automáticamente el más reciente. No necesitas
->   reiniciar nada: dejas el nuevo `.pkcls` en `./models/` y listo.
-> - Puedes mantener `.pkcls` antiguos en la carpeta como backup; la API
->   siempre usa el de `mtime` más reciente.
+> - **Selector de modelos:** el frontend muestra un desplegable con todos los
+>   `.pkcls` de `./models/`. Basta con guardar un nuevo archivo y aparecerá
+>   automáticamente sin reiniciar nada.
+> - Puedes mantener varios `.pkcls` a la vez para comparar modelos.
 
 ### C) Hacer predicciones
 
 1. Abrir http://localhost:8501
 2. Pestaña **🩺 Nuevo Triaje**
-3. Subir un audio en español (MP3, WAV, M4A, OGG)
-4. Pulsar **🔬 Analizar audio**
-5. Ver el banner Manchester con la predicción + tiempos por fase
+3. Seleccionar el modelo en el desplegable **🤖 Modelo ML**
+4. Subir un audio en español (MP3, WAV, M4A, OGG)
+5. Pulsar **🔬 Analizar audio**
+6. Ver el banner Manchester con la predicción + tiempos por fase
 
 ### D) Consultar el historial
 
@@ -284,18 +284,18 @@ Pestaña **📋 Historial** → tabla con todas las predicciones (con filtro por
 ## Workflow de Orange Data Mining
 
 ```
-┌──────┐    ┌────────────┐    ┌──────────────┐    ┌─────────────┐
-│ File ├───▶│ Continuize ├──┬▶│  Test&Score  │◀───┤RandomForest │
-└──────┘    └────────────┘  │ └──────┬───────┘    └──────┬──────┘
-                            │        │                   │
-                            │        ▼                   │
-                            │ ┌──────────────┐           │
-                            │ │Confusion Mtx │           │
-                            │ └──────────────┘           │
-                            │                            ▼
-                            │                    ┌──────────────┐
-                            └───────────────────▶│  Save Model  │
-                                                 └──────────────┘
+┌──────┐  ┌───────────┐  ┌────────────┐    ┌──────────────┐    ┌───────────┐
+│ File ├─▶│ BoW Binary├─▶│ Continuize ├──┬▶│  Test&Score  │◀───┤  Modelo   │
+└──────┘  └───────────┘  └────────────┘  │ └──────┬───────┘    └─────┬─────┘
+                                          │        │                  │
+                                          │        ▼                  │
+                                          │ ┌──────────────┐          │
+                                          │ │Confusion Mtx │          │
+                                          │ └──────────────┘          │
+                                          │                           ▼
+                                          │                   ┌──────────────┐
+                                          └──────────────────▶│  Save Model  │
+                                                              └──────────────┘
 ```
 
 **Por qué Orange en lugar de sklearn directo:**
@@ -365,8 +365,7 @@ la API). Los DAGs de Fase 1 NO escriben aquí.
 
 ```sql
 guid_entrevista              VARCHAR(255) PRIMARY KEY
-url_texto_original           VARCHAR(500)
-url_modelo_entrenado         VARCHAR(500)
+url_texto_original           VARCHAR(255)
 motor_workflow               VARCHAR(50)   -- 'API'   (predicciones de Fase 3)
 estado                       VARCHAR(50)   -- 'PREDICIENDO' | 'PREDICCION_COMPLETADA' | 'ERROR'
 

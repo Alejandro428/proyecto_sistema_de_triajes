@@ -19,3 +19,9 @@ venv/
 # IDE
 .vscode/
 .idea/
+
+# Claude Code internal settings
+.claude/
+
+# Audios de prueba (los de producción van a MinIO, no al repo)
+data/audios/

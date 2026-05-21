@@ -10,4 +10,5 @@ psycopg2-binary
 minio
 Orange3
 Orange3-Text
+PyQt5
 openai-whisper

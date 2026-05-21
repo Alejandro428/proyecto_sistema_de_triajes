@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1
+ENV QT_QPA_PLATFORM=offscreen
 
 # ffmpeg es necesario para Whisper (decodificar audios)
 RUN apt-get update && apt-get install -y --no-install-recommends \
