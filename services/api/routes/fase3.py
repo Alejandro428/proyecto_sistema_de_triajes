@@ -167,8 +167,8 @@ def _entidad_principal(entidades: list) -> str:
 # CARGA PEREZOSA DE MODELOS (singletons)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_whisper_model = None
-_orange_model  = None
+_whisper_model  = None
+_orange_models: dict = {}  # {filename: model}
 
 
 def _get_db() -> DatabaseService:
@@ -187,14 +187,26 @@ def _cargar_whisper():
     return _whisper_model
 
 
-def _cargar_orange():
-    global _orange_model
-    if _orange_model is None and MODELS_DIR.exists():
-        pkcls = sorted(MODELS_DIR.glob("*.pkcls"), key=lambda p: p.stat().st_mtime, reverse=True)
-        if pkcls:
-            with open(pkcls[0], "rb") as f:
-                _orange_model = pickle.load(f)
-    return _orange_model
+def _listar_pkcls() -> list[Path]:
+    if not MODELS_DIR.exists():
+        return []
+    return sorted(MODELS_DIR.glob("*.pkcls"), key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def _cargar_orange(nombre: str | None = None):
+    """Carga y cachea un modelo por nombre de archivo. Sin nombre → el más reciente."""
+    global _orange_models
+    archivos = _listar_pkcls()
+    if not archivos:
+        return None, None
+    target = MODELS_DIR / nombre if nombre else archivos[0]
+    if not target.exists():
+        return None, nombre
+    key = target.name
+    if key not in _orange_models:
+        with open(target, "rb") as f:
+            _orange_models[key] = pickle.load(f)
+    return _orange_models[key], key
 
 
 def _extraer_json(texto: str) -> dict:
@@ -247,6 +259,7 @@ class PredecirRequest(BaseModel):
     entidades_normalizadas: list[str]
     categoria:              str
     score_ansiedad:         float
+    modelo:                 str | None = None  # None → el más reciente
     texto:                  str = ""
     resumen:                str = ""
     entidades:              list[str] = []
@@ -257,6 +270,7 @@ class PredecirResponse(BaseModel):
     guid:              str
     prediccion_ml:     str
     entidad_principal: str
+    modelo_usado:      str
     tiempo:            float
 
 
@@ -365,7 +379,19 @@ def extraer(req: ExtraerRequest):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ENDPOINT 3 — ML (Orange)
+# ENDPOINT 3a — Listar modelos disponibles
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/modelos")
+def listar_modelos():
+    """Lista los modelos .pkcls disponibles en /app/models, ordenados por fecha."""
+    archivos = _listar_pkcls()
+    nombres  = [p.name for p in archivos]
+    return {"modelos": nombres, "activo": nombres[0] if nombres else None}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ENDPOINT 3b — ML (Orange)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.post("/predecir", response_model=PredecirResponse)
@@ -375,17 +401,17 @@ def predecir(req: PredecirRequest):
     t0 = time.time()
     db.actualizar_prediccion(req.guid, inicio_entrenamiento=datetime.now())
 
-    modelo        = _cargar_orange()
-    entidades_set = set(_entidades_estandar(req.entidades_normalizadas))
-    entidad_ppal  = sorted(entidades_set, key=lambda x: (DICCIONARIO_PRIORIDAD.get(x, 99), x))[0] if entidades_set else "Sin_entidad"
+    modelo, modelo_key = _cargar_orange(req.modelo)
+    entidades_set      = set(_entidades_estandar(req.entidades_normalizadas))
+    entidad_ppal       = sorted(entidades_set, key=lambda x: (DICCIONARIO_PRIORIDAD.get(x, 99), x))[0] if entidades_set else "Sin_entidad"
 
     if modelo is None:
         pred = "N/A"
     else:
         try:
             from Orange.data import Table
-            domain = modelo.domain
-            fila   = []
+            domain     = modelo.domain
+            fila       = []
             n_sintomas = len(entidades_set)
             for attr in domain.attributes:
                 name = attr.name
@@ -403,8 +429,8 @@ def predecir(req: PredecirRequest):
                     fila.append(float(n_sintomas))
                 else:
                     fila.append(0.0)
-            Y = np.array([[np.nan]])
-            M = np.array([[""] * len(domain.metas)], dtype=object) if domain.metas else None
+            Y     = np.array([[np.nan]])
+            M     = np.array([[""] * len(domain.metas)], dtype=object) if domain.metas else None
             tabla = Table.from_numpy(domain, np.array([fila]), Y, M)
             pred  = str(domain.class_var.values[int(modelo(tabla)[0])])
         except Exception as exc:
@@ -428,6 +454,7 @@ def predecir(req: PredecirRequest):
             "entidad_principal":      entidad_ppal,
             "score_ansiedad":         req.score_ansiedad,
             "prediccion_entrenada":   pred,
+            "modelo_usado":           modelo_key or "N/A",
         })
     except Exception as exc:
         print(f"[predecir] no se pudo subir JSON: {exc}")
@@ -440,5 +467,6 @@ def predecir(req: PredecirRequest):
     )
 
     return PredecirResponse(
-        guid=req.guid, prediccion_ml=pred, entidad_principal=entidad_ppal, tiempo=tiempo,
+        guid=req.guid, prediccion_ml=pred, entidad_principal=entidad_ppal,
+        modelo_usado=modelo_key or "N/A", tiempo=tiempo,
     )

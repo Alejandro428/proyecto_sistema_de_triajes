@@ -268,7 +268,7 @@ st.markdown("""
     <div style="font-size:3rem;line-height:1">🏥</div>
     <div>
         <h1>TriageIA — Sistema de Triaje Manchester</h1>
-        <div class="sub">Audio → Whisper → Mistral → Random Forest (Orange) → C1–C5</div>
+        <div class="sub">Audio → Whisper → Mistral → Modelo ML (Orange) → C1–C5</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -284,6 +284,23 @@ tab_triaje, tab_historial = st.tabs(["🩺 Nuevo Triaje", "📋 Historial"])
 with tab_triaje:
     st.markdown("### Analizar nueva entrevista clínica")
     st.markdown("Sube un audio en español. El procesamiento completo se hace en la API.")
+
+    # ── Selección de modelo ────────────────────────────────────────────────
+    try:
+        r_modelos = httpx.get(f"{API_URL}/fase3/modelos", timeout=5.0)
+        modelos_disponibles = r_modelos.json().get("modelos", [])
+    except Exception:
+        modelos_disponibles = []
+
+    if modelos_disponibles:
+        modelo_seleccionado = st.selectbox(
+            "🤖 Modelo ML",
+            modelos_disponibles,
+            help="Modelos .pkcls disponibles en /app/models, ordenados por fecha (el más reciente primero)",
+        )
+    else:
+        modelo_seleccionado = None
+        st.warning("No hay modelos disponibles. Entrena uno en Orange y guárdalo en `./models/`.")
 
     uploaded = st.file_uploader(
         "Audio de la entrevista",
@@ -345,7 +362,8 @@ with tab_triaje:
             s.update(label=f"✓ Extracción completada ({_fmt_dur(r2['tiempo'])})", state="complete")
 
         # ── PASO 3 — ML (Orange) ──────────────────────────────────────────
-        with st.status("🤖 Prediciendo con Random Forest (Orange)...", expanded=True) as s:
+        nombre_modelo = modelo_seleccionado or "más reciente"
+        with st.status(f"🤖 Prediciendo con {nombre_modelo}...", expanded=True) as s:
             try:
                 r3 = httpx.post(
                     f"{API_URL}/fase3/predecir",
@@ -354,6 +372,7 @@ with tab_triaje:
                         "entidades_normalizadas": entidades_norm,
                         "categoria":              categoria,
                         "score_ansiedad":         score_ans,
+                        "modelo":                 modelo_seleccionado,
                         "texto":                  transcripcion,
                         "resumen":                resumen,
                         "entidades":              entidades,
@@ -371,8 +390,9 @@ with tab_triaje:
             tiempos["total"]  = sum(tiempos.values())
             pred_ml           = r3["prediccion_ml"]
             entidad_principal = r3["entidad_principal"]
+            modelo_usado      = r3.get("modelo_usado", nombre_modelo)
             st.write(f"🎯 Predicción: **{pred_ml}** (entidad principal: **{entidad_principal}**)")
-            s.update(label=f"✓ Predicción ML completada ({_fmt_dur(r3['tiempo'])})", state="complete")
+            s.update(label=f"✓ Predicción ML completada con {modelo_usado} ({_fmt_dur(r3['tiempo'])})", state="complete")
 
         # Refrescar historial para que aparezca el nuevo caso
         get_historial.clear()
@@ -422,13 +442,13 @@ with tab_triaje:
         labels = {
             "transcripcion": "🎤 Transcripción Whisper",
             "llm":           "🧠 Extracción IA (Mistral)",
-            "ml":            "🤖 Predicción ML (Orange)",
+            "ml":            f"🤖 Predicción ML ({modelo_usado})",
         }
         cols = st.columns(len(labels))
         for i, (k, label) in enumerate(labels.items()):
             cols[i].metric(label, _fmt_dur(tiempos.get(k)))
         st.success(f"**Tiempo total del análisis: {_fmt_dur(tiempos['total'])}**")
-        st.caption(f"Caso: `{guid}` · Procesado por la API")
+        st.caption(f"Caso: `{guid}` · Modelo: `{modelo_usado}` · Procesado por la API")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
