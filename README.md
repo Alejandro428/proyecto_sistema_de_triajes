@@ -336,11 +336,11 @@ Score de ansiedad medio:      0.34
 Caso sin síntomas (Sin_Sintomas): 1
 
 ── Distribución Manchester ──────────────────────
-  C1    0 casos  (  0.0%)  sin casos de paro vital
-  C2   65 casos  ( 24.1%)  ██████
+  C1    0 casos  (  0.0%)  — ausente en el dataset (ver nota)
+  C2   67 casos  ( 24.8%)  ██████
   C3  121 casos  ( 44.8%)  █████████████████████████████
-  C4   58 casos  ( 21.5%)  █████████████
-  C5   26 casos  (  9.6%)  █████
+  C4   55 casos  ( 20.4%)  █████████████
+  C5   27 casos  ( 10.0%)  █████
 
 ── Entidades más frecuentes ─────────────────────
   Tos                  165 casos  (61.1%)
@@ -354,6 +354,15 @@ Caso sin síntomas (Sin_Sintomas): 1
   Palpitaciones         20 casos  ( 7.4%)
   Dolor_Abdominal       19 casos  ( 7.0%)
 ```
+
+> **Limitación conocida — C1 no es predecible con el modelo actual:**
+> El dataset Fareez OSCE no incluye ningún caso de parada cardiorrespiratoria
+> ni emergencia vital inmediata, por lo que los modelos entrenados sobre él
+> **nunca predicen C1**. El rango real de predicción es **C2–C5**.
+> Ante un audio con síntomas de máxima gravedad (Disnea + Dolor_Torácico
+> intensos, pérdida de consciencia, etc.), el modelo devolverá **C2** como
+> máximo. Para un uso clínico real sería necesario ampliar el dataset con
+> casos C1 etiquetados.
 
 ---
 

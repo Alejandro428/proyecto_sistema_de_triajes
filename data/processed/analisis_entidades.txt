@@ -42,11 +42,11 @@ Prioridad 5 = no urgente (C5)
   DISTRIBUCIÓN POR NIVEL MANCHESTER (target)
 ═════════════════════════════════════════════════════════════════
 
-  C1    0 casos  (  0.0%)  — sin casos de paro vital en Fareez OSCE
-  C2   65 casos  ( 24.1%)  ██████
+  C1    0 casos  (  0.0%)  — ausente (ver notas de calidad)
+  C2   67 casos  ( 24.8%)  ██████
   C3  121 casos  ( 44.8%)  ████████████████████████████████████████████
-  C4   58 casos  ( 21.5%)  █████████████████████
-  C5   26 casos  (  9.6%)  █████████
+  C4   55 casos  ( 20.4%)  █████████████████████
+  C5   27 casos  ( 10.0%)  █████████
 
 ═════════════════════════════════════════════════════════════════
   DISTRIBUCIÓN POR CATEGORÍA CLÍNICA
@@ -77,7 +77,16 @@ Prioridad 5 = no urgente (C5)
   - 0 filas con NaN en cualquier columna
   - 0 etiquetas fuera del rango C1-C5
   - 0 inconsistencias en n_sintomas vs. entidades contadas
-  - C1 ausente: esperable — el dataset Fareez OSCE no contiene
-    casos de parada cardíaca o estado vegetativo
-  - RES dominante (78%): el dataset es de origen respiratorio/
-    infeccioso (médicos de familia), no de urgencias hospitalarias
+  - C1 ausente (0 casos): el dataset Fareez OSCE no contiene casos
+    de parada cardiorrespiratoria ni emergencia vital inmediata.
+    CONSECUENCIA: los modelos entrenados sobre este dataset nunca
+    predicen C1. Rango real de predicción: C2–C5. Ante síntomas de
+    máxima gravedad el modelo devolverá C2 como máximo. Para uso
+    clínico real sería necesario incorporar casos C1 etiquetados.
+  - RES dominante (78%): el dataset es de consulta médica general/
+    respiratoria (médicos de familia), no de urgencias hospitalarias.
+    Los modelos pueden tener menor precisión en categorías poco
+    representadas (GAS=6, CAR=5, DER=1, GEN=1).
+  - Variaciones run-a-run: Mistral (temperature=0.1) puede etiquetar
+    casos límite de forma ligeramente distinta en cada ejecución.
+    Los números de este análisis corresponden al último run del DAG.
