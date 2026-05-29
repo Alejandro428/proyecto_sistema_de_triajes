@@ -129,10 +129,19 @@ Postgres (BD: triageia)
 
 ## Setup
 
+> ⚠️ **Requisito obligatorio**: necesitas una API key de **Mistral AI** para que el pipeline funcione. Sin ella, los servicios `api` y `airflow` fallarán al arrancar con `ERROR: variable de entorno requerida: MISTRAL_API_KEY`. La extracción de entidades clínicas (Fase 3) y el enriquecimiento del dataset (Fase 1) llaman directamente al LLM.
+>
+> **Cómo conseguirla** (gratis, 2 minutos):
+> 1. Crea cuenta en [console.mistral.ai](https://console.mistral.ai/) (acepta GitHub/Google login).
+> 2. Ve a **API keys** → **Create new key**.
+> 3. Copia la key generada y pégala en tu `.env` (paso 1 de abajo).
+>
+> El tier gratuito de Mistral incluye un volumen de llamadas mensual más que suficiente para pruebas de este proyecto.
+
 ```bash
 # 1. Variables de entorno
 cp .env.example .env
-#   → poner tu MISTRAL_API_KEY
+#   → ABRIR .env Y PONER TU MISTRAL_API_KEY (sin esto NO funciona)
 
 # 2. Levantar todos los servicios
 docker compose up -d --build
